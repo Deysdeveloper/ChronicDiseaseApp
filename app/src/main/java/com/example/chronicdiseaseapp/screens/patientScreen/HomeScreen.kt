@@ -39,6 +39,7 @@ import com.example.chronicdiseaseapp.viewModel.HealthDataViewModel
 import com.example.chronicdiseaseapp.utils.*
 import java.text.SimpleDateFormat
 import java.util.*
+import android.util.Log
 
 @Composable
 fun HomeScreen(
@@ -76,8 +77,9 @@ fun HomeScreen(
 
     // Check privacy status on startup and load user profile
     LaunchedEffect(currentUser?.uid) {
-        currentUser?.uid?.let {
+        currentUser?.uid?.let { uid ->
             // Always load the user profile when component mounts or user changes
+            Log.d("HomeScreen", "Loading profile for user: $uid")
             authViewModel.loadCurrentUserProfile()
         }
 
@@ -91,6 +93,13 @@ fun HomeScreen(
                 showHealthConsentDialog = true
             }
         }
+    }
+
+    // Log profile data when it changes
+    LaunchedEffect(userProfile) {
+        userProfile?.let { profile ->
+            Log.d("HomeScreen", "Profile loaded - Name: ${profile.fullName}, Age: ${profile.age}")
+        } ?: Log.d("HomeScreen", "Profile is null")
     }
 
     // Privacy Notice Dialog
@@ -197,7 +206,7 @@ fun HomeScreen(
                     modifier = Modifier
                         .size(64.dp)
                         .clip(CircleShape)
-                        .background(Color(0xFFFFE5D0))
+                        .background(Color(0xFFE8E0F5))
                         .clickable(enabled = !isLoading) { launcher.launch("image/*") },
                     contentAlignment = Alignment.Center
                 ) {
@@ -213,24 +222,41 @@ fun HomeScreen(
                                 .clip(CircleShape)
                         )
                     } else {
-                        Text("👩", fontSize = 28.sp)
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Profile",
+                            tint = Color(0xFF6A5ACD),
+                            modifier = Modifier.size(36.dp)
+                        )
                     }
                 }
 
                 Column(modifier = Modifier.padding(start = 16.dp)) {
+                    // Display name
+                    val displayName = userProfile?.fullName
+                        ?: currentUser?.displayName
+                        ?: if (isLoading) "Loading..." else "Your Name"
+
                     Text(
-                        text = userProfile?.fullName ?: (currentUser?.displayName ?: "Your Name"),
+                        text = displayName,
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF222222)
                     )
-                    val ageText = userProfile?.age?.let { "Age $it" } ?: "Age —"
+
+                    // Display age with proper formatting
+                    val age = userProfile?.age
+                    val ageText = when {
+                        age != null && age > 0 -> "Age $age"
+                        isLoading -> "Loading..."
+                        else -> "Your Age"
+                    }
+
                     Text(
                         text = ageText,
                         fontSize = 14.sp,
                         color = Color(0xFF666666)
                     )
-
                 }
             }
 

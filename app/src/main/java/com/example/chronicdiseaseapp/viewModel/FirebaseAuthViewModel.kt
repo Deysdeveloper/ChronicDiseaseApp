@@ -1,5 +1,6 @@
 package com.example.chronicdiseaseapp.viewModel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.LiveData
@@ -16,6 +17,7 @@ import kotlinx.coroutines.tasks.await
 
 class FirebaseAuthViewModel : ViewModel() {
 
+    private val TAG = "FirebaseAuthViewModel"
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
     private val storage: FirebaseStorage = FirebaseStorage.getInstance()
@@ -107,8 +109,10 @@ class FirebaseAuthViewModel : ViewModel() {
             _errorMessage.value = null
 
             try {
+                Log.d(TAG, "Starting signup process for email: $email")
                 val result = auth.createUserWithEmailAndPassword(email, password).await()
                 val user = result.user
+                Log.d(TAG, "Firebase Auth user created successfully. UID: ${user?.uid}")
 
                 // Update user profile with display name
                 user?.let {
@@ -117,6 +121,7 @@ class FirebaseAuthViewModel : ViewModel() {
                         .build()
 
                     it.updateProfile(profileUpdates).await()
+                    Log.d(TAG, "Display name updated in Firebase Auth")
 
                     // Prepare and persist user profile to Firestore
                     val userProfile = UserProfile(
@@ -135,20 +140,39 @@ class FirebaseAuthViewModel : ViewModel() {
                         specialization = specialization?.takeIf { spec -> spec.isNotBlank() }
                     )
 
+                    Log.d(TAG, "User profile object created: $userProfile")
+
                     // Store in appropriate collection based on user type
                     val collection = if (userType == UserType.DOCTOR) "doctors" else "patients"
+                    Log.d(TAG, "Storing user in collections: users and $collection")
 
                     // Store in both users collection (for general auth) and specific collection
-                    firestore.collection("users").document(it.uid).set(userProfile).await()
-                    firestore.collection(collection).document(it.uid).set(userProfile).await()
+                    try {
+                        firestore.collection("users").document(it.uid).set(userProfile).await()
+                        Log.d(TAG, "✅ Successfully saved to 'users' collection")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ FAILED to save to 'users' collection: ${e.message}", e)
+                        throw e
+                    }
+
+                    try {
+                        firestore.collection(collection).document(it.uid).set(userProfile).await()
+                        Log.d(TAG, "✅ Successfully saved to '$collection' collection")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ FAILED to save to '$collection' collection: ${e.message}", e)
+                        throw e
+                    }
 
                     _currentUser.value = it
                     _authState.value = AuthState.AUTHENTICATED
                     // Load user profile after successful sign up
                     _userProfile.value = userProfile
+                    Log.d(TAG, "✅ Signup complete! User profile set in LiveData")
                     onResult(true, null)
                 }
             } catch (e: Exception) {
+                Log.e(TAG, "❌ Signup failed with error: ${e.message}", e)
+                Log.e(TAG, "Error type: ${e.javaClass.simpleName}")
                 val errorMsg = getFirebaseErrorMessage(e)
                 _errorMessage.value = errorMsg
                 _authState.value = AuthState.ERROR
@@ -266,16 +290,29 @@ class FirebaseAuthViewModel : ViewModel() {
      */
     fun loadCurrentUserProfile() {
         val userId = auth.currentUser?.uid ?: run {
+            Log.w(TAG, "Cannot load profile: No user signed in")
             _userProfile.value = null
             return
         }
 
         viewModelScope.launch {
             try {
+                Log.d(TAG, "Loading profile for user: $userId")
                 val snapshot = firestore.collection("users").document(userId).get().await()
-                val profile = snapshot.toObject(UserProfile::class.java)
-                _userProfile.value = profile
+
+                if (snapshot.exists()) {
+                    val profile = snapshot.toObject(UserProfile::class.java)
+                    _userProfile.value = profile
+                    Log.d(
+                        TAG,
+                        "✅ Profile loaded successfully: Name=${profile?.fullName}, Age=${profile?.age}"
+                    )
+                } else {
+                    Log.w(TAG, "⚠️ No profile document found in Firestore for user: $userId")
+                    _userProfile.value = null
+                }
             } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to load profile: ${e.message}", e)
                 // Keep previous value, but set an error for UI if needed
                 _errorMessage.value = getFirebaseErrorMessage(e)
             }

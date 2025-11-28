@@ -140,10 +140,15 @@ fun DocHomeScreen(
                         modifier = Modifier
                             .size(64.dp)
                             .clip(CircleShape)
-                            .background(Color(0xFFE3F2FD)),
+                            .background(Color(0xFFE8E0F5)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("👨‍⚕️", fontSize = 28.sp)
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = "Doctor Profile",
+                            tint = Color(0xFF6A5ACD),
+                            modifier = Modifier.size(36.dp)
+                        )
                     }
 
                     Column(modifier = Modifier.padding(start = 16.dp)) {
