@@ -5,14 +5,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -20,6 +20,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.chronicdiseaseapp.viewModel.FirebaseAuthViewModel
 import androidx.compose.ui.platform.LocalContext
 import com.example.chronicdiseaseapp.utils.PrivacyManager
+import java.text.SimpleDateFormat
+import java.util.*
 
 @Composable
 fun ProfileScreen(
@@ -41,12 +43,40 @@ fun ProfileScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Profile Section
+        // Header with refresh button
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "My Profile",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF222222)
+            )
+
+            IconButton(
+                onClick = { authViewModel.loadCurrentUserProfile() },
+                enabled = !isLoading
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Refresh Profile",
+                    tint = if (isLoading) Color.Gray else Color(0xFF6A5ACD)
+                )
+            }
+        }
+
+        // Personal Information Section
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             shape = RoundedCornerShape(16.dp)
@@ -57,14 +87,14 @@ fun ProfileScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Profile",
-                        tint = Color(0xFF64A9FF),
+                        imageVector = Icons.Default.Person,
+                        contentDescription = "Personal Info",
+                        tint = Color(0xFF6A5ACD),
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        "Profile Information",
+                        "Personal Information",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         color = Color(0xFF222222)
@@ -73,10 +103,100 @@ fun ProfileScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                ProfileInfoItem("Name", userProfile?.fullName ?: currentUser?.displayName ?: "—")
-                ProfileInfoItem("Email", currentUser?.email ?: "—")
-                ProfileInfoItem("Age", userProfile?.age?.toString() ?: "—")
-                ProfileInfoItem("Phone", userProfile?.phoneNumber ?: "—")
+                ProfileInfoItemWithIcon(
+                    icon = Icons.Default.Person,
+                    label = "Full Name",
+                    value = userProfile?.fullName ?: currentUser?.displayName ?: "—"
+                )
+
+                ProfileInfoItemWithIcon(
+                    icon = Icons.Default.Email,
+                    label = "Email Address",
+                    value = currentUser?.email ?: "—"
+                )
+
+                ProfileInfoItemWithIcon(
+                    icon = Icons.Default.Phone,
+                    label = "Phone Number",
+                    value = userProfile?.phoneNumber ?: "Not provided"
+                )
+
+                ProfileInfoItemWithIcon(
+                    icon = Icons.Default.DateRange,
+                    label = "Age",
+                    value = userProfile?.age?.let { "$it years" } ?: "Not provided"
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Account Information Section
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AccountBox,
+                        contentDescription = "Account Info",
+                        tint = Color(0xFF64A9FF),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "Account Information",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color(0xFF222222)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                ProfileInfoItemWithIcon(
+                    icon = Icons.Default.Info,
+                    label = "User ID",
+                    value = currentUser?.uid?.take(8) + "..." ?: "—"
+                )
+
+                ProfileInfoItemWithIcon(
+                    icon = Icons.Default.AccountCircle,
+                    label = "Account Type",
+                    value = userProfile?.userType?.name?.lowercase()
+                        ?.replaceFirstChar { it.uppercase() } ?: "Patient"
+                )
+
+                val createdAt = userProfile?.createdAt?.let { timestamp ->
+                    val date = Date(timestamp)
+                    SimpleDateFormat("MMM dd, yyyy 'at' hh:mm a", Locale.getDefault()).format(date)
+                } ?: "—"
+
+                ProfileInfoItemWithIcon(
+                    icon = Icons.Default.DateRange,
+                    label = "Member Since",
+                    value = createdAt
+                )
+
+                ProfileInfoItemWithIcon(
+                    icon = Icons.Default.CheckCircle,
+                    label = "Terms Accepted",
+                    value = if (userProfile?.termsAccepted == true) "Yes" else "No"
+                )
+
+                ProfileInfoItemWithIcon(
+                    icon = Icons.Default.Email,
+                    label = "Email Verified",
+                    value = if (currentUser?.isEmailVerified == true) "Yes" else "No"
+                )
             }
         }
 
@@ -84,7 +204,9 @@ fun ProfileScreen(
 
         // Privacy Section
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             shape = RoundedCornerShape(16.dp)
@@ -226,6 +348,7 @@ fun ProfileScreen(
             onClick = onSignOut,
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 16.dp)
                 .height(48.dp),
             colors = ButtonDefaults.outlinedButtonColors(
                 contentColor = Color.Red
@@ -259,5 +382,44 @@ private fun ProfileInfoItem(
             color = Color(0xFF222222),
             modifier = Modifier.padding(top = 2.dp, bottom = 8.dp)
         )
+    }
+}
+
+@Composable
+private fun ProfileInfoItemWithIcon(
+    icon: ImageVector,
+    label: String,
+    value: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = Color(0xFF6A5ACD),
+            modifier = Modifier.size(20.dp)
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                color = Color(0xFF888888),
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = value,
+                fontSize = 15.sp,
+                color = Color(0xFF222222),
+                fontWeight = FontWeight.Normal,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
     }
 }
