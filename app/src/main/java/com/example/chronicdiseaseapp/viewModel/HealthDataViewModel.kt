@@ -91,6 +91,8 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
                     .collect { readings ->
                         _heartRateData.value = readings
                         Log.d(tag, "Loaded ${readings.size} heart rate readings")
+                        // Update metrics immediately after heart rate data loads
+                        updateHealthMetrics()
                     }
 
                 // Load SpO2 data
@@ -101,6 +103,8 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
                     .collect { readings ->
                         _spO2Data.value = readings
                         Log.d(tag, "Loaded ${readings.size} SpO2 readings")
+                        // Update metrics immediately after SpO2 data loads
+                        updateHealthMetrics()
                     }
 
                 // Load blood pressure data
@@ -111,6 +115,8 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
                     .collect { readings ->
                         _bloodPressureData.value = readings
                         Log.d(tag, "Loaded ${readings.size} blood pressure readings")
+                        // Update metrics immediately after blood pressure data loads
+                        updateHealthMetrics()
                     }
 
                 // Load steps data
@@ -121,9 +127,11 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
                     .collect { readings ->
                         _stepsData.value = readings
                         Log.d(tag, "Loaded ${readings.size} steps readings")
+                        // Update metrics immediately after steps data loads
+                        updateHealthMetrics()
                     }
 
-                // Update aggregated metrics
+                // Final update of aggregated metrics (ensures all data is included)
                 updateHealthMetrics()
 
                 // Update sync status
@@ -153,11 +161,31 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
         val bloodPressureReadings = _bloodPressureData.value ?: emptyList()
         val stepsReadings = _stepsData.value ?: emptyList()
 
-        // Calculate average heart rate from recent readings
-        val avgHeartRate = heartRateReadings
-            .mapNotNull { it.heartRate }
-            .takeIf { it.isNotEmpty() }
-            ?.average()?.toInt() ?: 0
+        Log.d(tag, "=== updateHealthMetrics called ===")
+        Log.d(tag, "Heart rate readings count: ${heartRateReadings.size}")
+
+        // Log first few heart rate values for debugging
+        if (heartRateReadings.isNotEmpty()) {
+            val hrValues = heartRateReadings.take(5).mapNotNull { it.heartRate }
+            Log.d(tag, "First 5 HR values: $hrValues")
+        }
+
+        // Get LATEST heart rate reading (real-time update like SpO2)
+        val latestHeartRate = heartRateReadings
+            .sortedByDescending { it.timestamp }
+            .firstOrNull()?.heartRate ?: 0
+
+        Log.d(tag, "Latest HR value (most recent): $latestHeartRate bpm")
+
+        // Also calculate average for reference
+        val heartRateValues = heartRateReadings.mapNotNull { it.heartRate }
+        if (heartRateValues.isNotEmpty()) {
+            val average = heartRateValues.average()
+            Log.d(
+                tag,
+                "HR average: ${average.toInt()} bpm (from ${heartRateValues.size} readings)"
+            )
+        }
 
         // Get latest SpO2 reading
         val latestSpO2 = spO2Readings
@@ -187,7 +215,7 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
         val trend = calculateHealthTrend(heartRateReadings)
 
         _healthMetrics.value = HealthMetrics(
-            averageHeartRate = avgHeartRate,
+            averageHeartRate = latestHeartRate,
             latestBloodPressure = latestBP,
             latestSpO2 = latestSpO2,
             dailySteps = dailySteps,
@@ -201,8 +229,9 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
 
         Log.d(
             tag,
-            "Updated health metrics: HR=$avgHeartRate, BP=$latestBP, SpO2=$latestSpO2, Steps=$dailySteps"
+            "✅ Updated health metrics: HR=$latestHeartRate bpm (latest), BP=$latestBP, SpO2=$latestSpO2, Steps=$dailySteps"
         )
+        Log.d(tag, "=================================")
     }
 
     private fun calculateHealthTrend(readings: List<HealthReading>): HealthTrend {

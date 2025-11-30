@@ -436,14 +436,18 @@ class HealthDataRepository(private val context: Context) {
     private fun generateSampleHeartRateData(): List<HealthReading> {
         Log.w(tag, "Generating sample heart rate data - no real data available")
         val currentTime = System.currentTimeMillis()
-        return (0..23).map { hour ->
+        val readings = (0..23).map { hour ->
+            val hr = Random.nextInt(60, 100)
             HealthReading(
                 id = UUID.randomUUID().toString(),
                 timestamp = currentTime - (hour * 60 * 60 * 1000),
-                heartRate = Random.nextInt(60, 100),
+                heartRate = hr,
                 source = "Sample Data (No Health Connect Data)"
             )
         }
+        val avgHR = readings.mapNotNull { it.heartRate }.average().toInt()
+        Log.w(tag, "Generated ${readings.size} sample HR readings with average: $avgHR bpm")
+        return readings
     }
 
     private fun generateSampleSpO2Data(): List<HealthReading> {

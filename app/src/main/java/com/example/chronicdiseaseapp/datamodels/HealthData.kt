@@ -29,7 +29,7 @@ data class HealthReading(
  * Aggregated health metrics for dashboard display
  */
 data class HealthMetrics(
-    val averageHeartRate: Int = 0,
+    val averageHeartRate: Int = 0, // Now stores the LATEST heart rate (most recent reading) for real-time updates
     val latestBloodPressure: String = "—/—",
     val latestSpO2: Int = 0,
     val dailySteps: Int = 0,
