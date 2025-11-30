@@ -1,0 +1,82 @@
+11-29 10:47:55.977 14421 14421 D HealthDataRepository: Health Connect initialized successfully - privacy compliant data access
+11-29 10:47:55.977 14421 14421 D HealthDataViewModel: Health Connect initialized successfully
+11-29 10:47:55.977 14421 14455 D HealthDataRepository: getHeartRateData: Starting heart rate data retrieval
+11-29 10:47:55.978 14421 14455 D HealthDataRepository: === PERMISSION CHECK ===
+11-29 10:47:55.978 14421 14455 D HealthDataRepository: Required permissions granted: true
+11-29 10:47:55.978 14421 14455 D HealthDataRepository: Optional permissions granted: 0/1
+11-29 10:47:55.978 14421 14455 D HealthDataRepository: Total required: 4, Total optional: 1
+11-29 10:47:55.978 14421 14455 D HealthDataRepository: Total granted by user: 4
+11-29 10:47:55.978 14421 14455 D HealthDataRepository: --- Required Permissions ---
+11-29 10:47:55.978 14421 14455 D HealthDataRepository:   android.permission.health.READ_HEART_RATE: true
+11-29 10:47:55.978 14421 14455 D HealthDataRepository:   android.permission.health.READ_BLOOD_PRESSURE: true
+11-29 10:47:55.978 14421 14455 D HealthDataRepository:   android.permission.health.READ_OXYGEN_SATURATION: true
+11-29 10:47:55.978 14421 14455 D HealthDataRepository:   android.permission.health.READ_STEPS: true
+11-29 10:47:55.978 14421 14455 D HealthDataRepository: --- Optional Permissions ---
+11-29 10:47:55.978 14421 14455 D HealthDataRepository:   android.permission.health.READ_ACTIVE_CALORIES_BURNED: false (optional - not required)
+11-29 10:47:55.978 14421 14455 D HealthDataRepository: ======================
+11-29 10:47:55.978 14421 14455 D HealthDataRepository: getHeartRateData: Permission check result: true
+11-29 10:47:55.978 14421 14455 D HealthDataRepository: getHeartRateData: Querying Health Connect from 2025-11-28T05:17:55.978652Z to 2025-11-29T05:17:55.978652Z
+11-29 10:47:55.980 14421 14455 W HealthDataRepository: getHeartRateData: No heart rate records found in Health Connect
+11-29 10:47:55.980 14421 14455 W HealthDataRepository: Generating sample heart rate data - no real data available
+11-29 10:47:56.041 14421 14421 D HealthDataViewModel: Loaded 24 heart rate readings
+11-29 10:47:56.042 14421 14455 D HealthDataRepository: getSpO2Data: Starting SpO2 data retrieval
+11-29 10:47:56.042 14421 14455 D HealthDataRepository: === PERMISSION CHECK ===
+11-29 10:47:56.042 14421 14455 D HealthDataRepository: Required permissions granted: true
+11-29 10:47:56.042 14421 14455 D HealthDataRepository: Optional permissions granted: 0/1
+11-29 10:47:56.042 14421 14455 D HealthDataRepository: Total required: 4, Total optional: 1
+11-29 10:47:56.042 14421 14455 D HealthDataRepository: Total granted by user: 4
+11-29 10:47:56.042 14421 14455 D HealthDataRepository: --- Required Permissions ---
+11-29 10:47:56.042 14421 14455 D HealthDataRepository:   android.permission.health.READ_HEART_RATE: true
+11-29 10:47:56.042 14421 14455 D HealthDataRepository:   android.permission.health.READ_BLOOD_PRESSURE: true
+11-29 10:47:56.042 14421 14455 D HealthDataRepository:   android.permission.health.READ_OXYGEN_SATURATION: true
+11-29 10:47:56.042 14421 14455 D HealthDataRepository:   android.permission.health.READ_STEPS: true
+11-29 10:47:56.042 14421 14455 D HealthDataRepository: --- Optional Permissions ---
+11-29 10:47:56.042 14421 14455 D HealthDataRepository:   android.permission.health.READ_ACTIVE_CALORIES_BURNED: false (optional - not required)
+11-29 10:47:56.042 14421 14455 D HealthDataRepository: ======================
+11-29 10:47:56.042 14421 14455 D HealthDataRepository: getSpO2Data: Permission check result: true
+11-29 10:47:56.042 14421 14455 D HealthDataRepository: getSpO2Data: Querying Health Connect from 2025-11-28T05:17:56.042560Z to 2025-11-29T05:17:56.042560Z
+11-29 10:47:56.046 14421 14455 W HealthDataRepository: getSpO2Data: No SpO2 records found in Health Connect
+11-29 10:47:56.046 14421 14455 W HealthDataRepository: Generating sample SpO2 data - no real data available
+11-29 10:47:56.070 14421 14421 D HealthDataViewModel: Loaded 6 SpO2 readings
+11-29 10:47:56.070 14421 14455 D HealthDataRepository: getBloodPressureData: Starting blood pressure data retrieval
+11-29 10:47:56.070 14421 14455 D HealthDataRepository: === PERMISSION CHECK ===
+11-29 10:47:56.070 14421 14455 D HealthDataRepository: Required permissions granted: true
+11-29 10:47:56.070 14421 14455 D HealthDataRepository: Optional permissions granted: 0/1
+11-29 10:47:56.070 14421 14455 D HealthDataRepository: Total required: 4, Total optional: 1
+11-29 10:47:56.070 14421 14455 D HealthDataRepository: Total granted by user: 4
+11-29 10:47:56.070 14421 14455 D HealthDataRepository: --- Required Permissions ---
+11-29 10:47:56.070 14421 14455 D HealthDataRepository:   android.permission.health.READ_HEART_RATE: true
+11-29 10:47:56.070 14421 14455 D HealthDataRepository:   android.permission.health.READ_BLOOD_PRESSURE: true
+11-29 10:47:56.070 14421 14455 D HealthDataRepository:   android.permission.health.READ_OXYGEN_SATURATION: true
+11-29 10:47:56.070 14421 14455 D HealthDataRepository:   android.permission.health.READ_STEPS: true
+11-29 10:47:56.070 14421 14455 D HealthDataRepository: --- Optional Permissions ---
+11-29 10:47:56.070 14421 14455 D HealthDataRepository:   android.permission.health.READ_ACTIVE_CALORIES_BURNED: false (optional - not required)
+11-29 10:47:56.070 14421 14455 D HealthDataRepository: ======================
+11-29 10:47:56.070 14421 14455 D HealthDataRepository: getBloodPressureData: Permission check result: true
+11-29 10:47:56.070 14421 14455 D HealthDataRepository: getBloodPressureData: Querying Health Connect from 2025-10-30T05:17:56.070860Z to 2025-11-29T05:17:56.070860Z
+11-29 10:47:56.073 14421 14455 D HealthDataRepository: getBloodPressureData: Received 0 records from Health Connect
+11-29 10:47:56.073 14421 14455 W HealthDataRepository: getBloodPressureData: No blood pressure records found in Health Connect
+11-29 10:47:56.073 14421 14455 W HealthDataRepository: getBloodPressureData: Check if data exists in Health Connect app and try manual sync
+11-29 10:47:56.073 14421 14455 W HealthDataRepository: Generating sample blood pressure data - no real data available
+11-29 10:47:56.074 14421 14421 D HealthDataViewModel: Loaded 3 blood pressure readings
+11-29 10:47:56.075 14421 14455 D HealthDataRepository: getStepsData: Starting steps data retrieval
+11-29 10:47:56.075 14421 14455 D HealthDataRepository: === PERMISSION CHECK ===
+11-29 10:47:56.075 14421 14455 D HealthDataRepository: Required permissions granted: true
+11-29 10:47:56.075 14421 14455 D HealthDataRepository: Optional permissions granted: 0/1
+11-29 10:47:56.075 14421 14455 D HealthDataRepository: Total required: 4, Total optional: 1
+11-29 10:47:56.075 14421 14455 D HealthDataRepository: Total granted by user: 4
+11-29 10:47:56.075 14421 14455 D HealthDataRepository: --- Required Permissions ---
+11-29 10:47:56.075 14421 14455 D HealthDataRepository:   android.permission.health.READ_HEART_RATE: true
+11-29 10:47:56.075 14421 14455 D HealthDataRepository:   android.permission.health.READ_BLOOD_PRESSURE: true
+11-29 10:47:56.075 14421 14455 D HealthDataRepository:   android.permission.health.READ_OXYGEN_SATURATION: true
+11-29 10:47:56.075 14421 14455 D HealthDataRepository:   android.permission.health.READ_STEPS: true
+11-29 10:47:56.075 14421 14455 D HealthDataRepository: --- Optional Permissions ---
+11-29 10:47:56.075 14421 14455 D HealthDataRepository:   android.permission.health.READ_ACTIVE_CALORIES_BURNED: false (optional - not required)
+11-29 10:47:56.075 14421 14455 D HealthDataRepository: ======================
+11-29 10:47:56.075 14421 14455 D HealthDataRepository: getStepsData: Permission check result: true
+11-29 10:47:56.075 14421 14455 D HealthDataRepository: getStepsData: Querying Health Connect from 2025-11-28T05:17:56.075311Z to 2025-11-29T05:17:56.075311Z
+11-29 10:47:56.077 14421 14455 D HealthDataRepository: getStepsData: Found 0 step records, total steps: 0
+11-29 10:47:56.077 14421 14455 W HealthDataRepository: getStepsData: No steps data found in Health Connect
+11-29 10:47:56.077 14421 14455 W HealthDataRepository: Generating sample steps data - no real data available
+11-29 10:47:56.078 14421 14421 D HealthDataViewModel: Loaded 1 steps readings
+11-29 10:47:56.078 14421 14421 D HealthDataViewModel: Updated health metrics: HR=76, BP=127/74, SpO2=95, Steps=5748

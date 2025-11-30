@@ -22,13 +22,21 @@ class HealthDataRepository(private val context: Context) {
     private var healthConnectClient: HealthConnectClient? = null
 
     // Health Connect permissions needed
-    private val permissions = setOf(
+    // Required permissions - these are essential for the app to function
+    private val requiredPermissions = setOf(
         HealthPermission.getReadPermission(HeartRateRecord::class),
         HealthPermission.getReadPermission(BloodPressureRecord::class),
         HealthPermission.getReadPermission(OxygenSaturationRecord::class),
-        HealthPermission.getReadPermission(StepsRecord::class),
+        HealthPermission.getReadPermission(StepsRecord::class)
+    )
+
+    // Optional permissions - nice to have but not essential
+    private val optionalPermissions = setOf(
         HealthPermission.getReadPermission(ActiveCaloriesBurnedRecord::class)
     )
+
+    // All permissions combined
+    private val permissions = requiredPermissions + optionalPermissions
 
     /**
      * Initialize Health Connect client
@@ -58,24 +66,62 @@ class HealthDataRepository(private val context: Context) {
 
     /**
      * Check if required permissions are granted
+     * Note: Only checks REQUIRED permissions, optional permissions don't affect this result
      */
     suspend fun checkPermissions(): Boolean {
         return try {
             healthConnectClient?.let { client ->
                 val grantedPermissions = client.permissionController.getGrantedPermissions()
-                val hasPermissions = permissions.all { it in grantedPermissions }
-                Log.d(tag, "Permission status checked - user consent: $hasPermissions")
-                Log.d(tag, "Required permissions: ${permissions.size}")
-                Log.d(tag, "Granted permissions: ${grantedPermissions.size}")
+
+                // Check if all REQUIRED permissions are granted (not optional ones)
+                val hasRequiredPermissions = requiredPermissions.all { it in grantedPermissions }
+                val grantedOptionalCount = optionalPermissions.count { it in grantedPermissions }
+
+                Log.d(tag, "=== PERMISSION CHECK ===")
+                Log.d(tag, "Required permissions granted: $hasRequiredPermissions")
+                Log.d(
+                    tag,
+                    "Optional permissions granted: $grantedOptionalCount/${optionalPermissions.size}"
+                )
+                Log.d(
+                    tag,
+                    "Total required: ${requiredPermissions.size}, Total optional: ${optionalPermissions.size}"
+                )
+                Log.d(tag, "Total granted by user: ${grantedPermissions.size}")
 
                 // Log each permission status for debugging
-                permissions.forEach { permission ->
+                Log.d(tag, "--- Required Permissions ---")
+                requiredPermissions.forEach { permission ->
                     val isGranted = grantedPermissions.contains(permission)
-                    Log.d(tag, "Permission ${permission} granted: $isGranted")
+                    val permissionName = when {
+                        permission.toString().contains("HeartRate") -> "Heart Rate"
+                        permission.toString().contains("BloodPressure") -> "Blood Pressure"
+                        permission.toString()
+                            .contains("OxygenSaturation") -> "Oxygen Saturation (SpO2)"
+
+                        permission.toString().contains("Steps") -> "Steps"
+                        else -> permission.toString()
+                    }
+                    Log.d(tag, "  $permissionName: $isGranted")
                 }
 
-                hasPermissions
-            } ?: false
+                Log.d(tag, "--- Optional Permissions ---")
+                optionalPermissions.forEach { permission ->
+                    val isGranted = grantedPermissions.contains(permission)
+                    val permissionName = when {
+                        permission.toString().contains("ActiveCalories") -> "Active Calories"
+                        else -> permission.toString()
+                    }
+                    Log.d(tag, "  $permissionName: $isGranted (optional - not required)")
+                }
+                Log.d(tag, "======================")
+
+                // Return true if all REQUIRED permissions are granted
+                hasRequiredPermissions
+            } ?: run {
+                Log.w(tag, "Health Connect client is null - cannot check permissions")
+                false
+            }
         } catch (e: Exception) {
             Log.e(tag, "Error checking permissions - maintaining privacy", e)
             false
@@ -95,46 +141,68 @@ class HealthDataRepository(private val context: Context) {
      */
     fun getHeartRateData(): Flow<List<HealthReading>> = flow {
         try {
-            healthConnectClient?.let { client ->
-                if (checkPermissions()) {
-                    val endTime = Instant.now()
-                    val startTime = endTime.minusSeconds(24 * 60 * 60) // 24 hours ago
+            Log.d(tag, "getHeartRateData: Starting heart rate data retrieval")
 
-                    val request = ReadRecordsRequest(
-                        recordType = HeartRateRecord::class,
-                        timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            if (healthConnectClient == null) {
+                Log.w(tag, "getHeartRateData: Health Connect client is null, using sample data")
+                emit(generateSampleHeartRateData())
+                return@flow
+            }
+
+            val client = healthConnectClient!!
+            val hasPermissions = checkPermissions()
+            Log.d(tag, "getHeartRateData: Permission check result: $hasPermissions")
+
+            if (!hasPermissions) {
+                Log.w(tag, "getHeartRateData: Permissions not granted, using sample data")
+                emit(generateSampleHeartRateData())
+                return@flow
+            }
+
+            val endTime = Instant.now()
+            val startTime = endTime.minusSeconds(24 * 60 * 60) // 24 hours ago
+
+            Log.d(tag, "getHeartRateData: Querying Health Connect from $startTime to $endTime")
+
+            val request = ReadRecordsRequest(
+                recordType = HeartRateRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            )
+
+            val response = client.readRecords(request)
+            val readings = mutableListOf<HealthReading>()
+
+            // HeartRateRecord contains samples, each with beatsPerMinute and time
+            response.records.forEach { record ->
+                record.samples.forEach { sample ->
+                    readings.add(
+                        HealthReading(
+                            id = UUID.randomUUID().toString(),
+                            timestamp = sample.time.toEpochMilli(),
+                            heartRate = sample.beatsPerMinute.toInt(),
+                            source = "Health Connect"
+                        )
                     )
-
-                    val response = client.readRecords(request)
-                    val readings = mutableListOf<HealthReading>()
-
-                    // HeartRateRecord contains samples, each with beatsPerMinute and time
-                    response.records.forEach { record ->
-                        record.samples.forEach { sample ->
-                            readings.add(
-                                HealthReading(
-                                    id = UUID.randomUUID().toString(),
-                                    timestamp = sample.time.toEpochMilli(),
-                                    heartRate = sample.beatsPerMinute.toInt(),
-                                    source = "Galaxy Watch 4" // Non-sensitive metadata only
-                                )
-                            )
-                        }
-                    }
-
-                    // Privacy: Only log count, not actual values
-                    Log.d(tag, "Retrieved ${readings.size} heart rate readings - data kept local")
-                    emit(readings)
-                    return@flow
                 }
             }
 
-            // Fallback: Generate sample heart rate data for demo
-            Log.d(tag, "Using privacy-safe sample heart rate data")
-            emit(generateSampleHeartRateData())
+            if (readings.isEmpty()) {
+                Log.w(tag, "getHeartRateData: No heart rate records found in Health Connect")
+                emit(generateSampleHeartRateData())
+                return@flow
+            }
+
+            Log.d(
+                tag,
+                "getHeartRateData: Successfully retrieved ${readings.size} heart rate readings from Health Connect"
+            )
+            emit(readings)
 
         } catch (e: Exception) {
-            Log.e(tag, "Error reading heart rate data - privacy maintained")
+            Log.e(tag, "getHeartRateData: Error reading heart rate data", e)
+            Log.e(
+                tag,
+                "getHeartRateData: Exception type: ${e.javaClass.simpleName}, Message: ${e.message}")
             emit(generateSampleHeartRateData())
         }
     }.flowOn(Dispatchers.IO)
@@ -145,41 +213,62 @@ class HealthDataRepository(private val context: Context) {
      */
     fun getSpO2Data(): Flow<List<HealthReading>> = flow {
         try {
-            healthConnectClient?.let { client ->
-                if (checkPermissions()) {
-                    val endTime = Instant.now()
-                    val startTime = endTime.minusSeconds(24 * 60 * 60) // 24 hours ago
+            Log.d(tag, "getSpO2Data: Starting SpO2 data retrieval")
 
-                    val request = ReadRecordsRequest(
-                        recordType = OxygenSaturationRecord::class,
-                        timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
-                    )
-
-                    val response = client.readRecords(request)
-                    val readings = response.records.map { record ->
-                        HealthReading(
-                            id = UUID.randomUUID().toString(),
-                            timestamp = record.time.toEpochMilli(),
-                            oxygenSaturation = (record.percentage.value * 100).toInt(),
-                            source = "Galaxy Watch 4"
-                        )
-                    }
-
-                    Log.d(
-                        tag,
-                        "Retrieved ${readings.size} SpO2 readings - data processing local only"
-                    )
-                    emit(readings)
-                    return@flow
-                }
+            if (healthConnectClient == null) {
+                Log.w(tag, "getSpO2Data: Health Connect client is null, using sample data")
+                emit(generateSampleSpO2Data())
+                return@flow
             }
 
-            // Fallback: Generate sample SpO2 data for demo
-            Log.d(tag, "Using privacy-safe sample SpO2 data")
-            emit(generateSampleSpO2Data())
+            val client = healthConnectClient!!
+            val hasPermissions = checkPermissions()
+            Log.d(tag, "getSpO2Data: Permission check result: $hasPermissions")
+
+            if (!hasPermissions) {
+                Log.w(tag, "getSpO2Data: Permissions not granted, using sample data")
+                emit(generateSampleSpO2Data())
+                return@flow
+            }
+
+            val endTime = Instant.now()
+            val startTime = endTime.minusSeconds(24 * 60 * 60) // 24 hours ago
+
+            Log.d(tag, "getSpO2Data: Querying Health Connect from $startTime to $endTime")
+
+            val request = ReadRecordsRequest(
+                recordType = OxygenSaturationRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            )
+
+            val response = client.readRecords(request)
+
+            if (response.records.isEmpty()) {
+                Log.w(tag, "getSpO2Data: No SpO2 records found in Health Connect")
+                emit(generateSampleSpO2Data())
+                return@flow
+            }
+
+            val readings = response.records.map { record ->
+                HealthReading(
+                    id = UUID.randomUUID().toString(),
+                    timestamp = record.time.toEpochMilli(),
+                    oxygenSaturation = (record.percentage.value * 100).toInt(),
+                    source = "Health Connect"
+                )
+            }
+
+            Log.d(
+                tag,
+                "getSpO2Data: Successfully retrieved ${readings.size} SpO2 readings from Health Connect"
+            )
+            emit(readings)
 
         } catch (e: Exception) {
-            Log.e(tag, "Error reading SpO2 data - privacy maintained")
+            Log.e(tag, "getSpO2Data: Error reading SpO2 data", e)
+            Log.e(
+                tag,
+                "getSpO2Data: Exception type: ${e.javaClass.simpleName}, Message: ${e.message}")
             emit(generateSampleSpO2Data())
         }
     }.flowOn(Dispatchers.IO)
@@ -190,42 +279,81 @@ class HealthDataRepository(private val context: Context) {
      */
     fun getBloodPressureData(): Flow<List<HealthReading>> = flow {
         try {
-            healthConnectClient?.let { client ->
-                if (checkPermissions()) {
-                    val endTime = Instant.now()
-                    val startTime = endTime.minusSeconds(7 * 24 * 60 * 60) // 7 days ago
+            Log.d(tag, "getBloodPressureData: Starting blood pressure data retrieval")
 
-                    val request = ReadRecordsRequest(
-                        recordType = BloodPressureRecord::class,
-                        timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
-                    )
-
-                    val response = client.readRecords(request)
-                    val readings = response.records.map { record ->
-                        HealthReading(
-                            id = UUID.randomUUID().toString(),
-                            timestamp = record.time.toEpochMilli(),
-                            bloodPressureSystolic = record.systolic.inMillimetersOfMercury.toInt(),
-                            bloodPressureDiastolic = record.diastolic.inMillimetersOfMercury.toInt(),
-                            source = "Samsung Health"
-                        )
-                    }
-
-                    Log.d(
-                        tag,
-                        "Retrieved ${readings.size} blood pressure readings - confidential data local only"
-                    )
-                    emit(readings)
-                    return@flow
-                }
+            if (healthConnectClient == null) {
+                Log.w(tag, "getBloodPressureData: Health Connect client is null, using sample data")
+                emit(generateSampleBloodPressureData())
+                return@flow
             }
 
-            // Fallback: Generate sample blood pressure data for demo
-            Log.d(tag, "Using privacy-safe sample blood pressure data")
-            emit(generateSampleBloodPressureData())
+            val client = healthConnectClient!!
+            val hasPermissions = checkPermissions()
+            Log.d(tag, "getBloodPressureData: Permission check result: $hasPermissions")
+
+            if (!hasPermissions) {
+                Log.w(tag, "getBloodPressureData: Permissions not granted, using sample data")
+                emit(generateSampleBloodPressureData())
+                return@flow
+            }
+
+            val endTime = Instant.now()
+            val startTime = endTime.minusSeconds(30 * 24 * 60 * 60) // 30 days ago for more data
+
+            Log.d(tag, "getBloodPressureData: Querying Health Connect from $startTime to $endTime")
+
+            val request = ReadRecordsRequest(
+                recordType = BloodPressureRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            )
+
+            val response = client.readRecords(request)
+            Log.d(
+                tag,
+                "getBloodPressureData: Received ${response.records.size} records from Health Connect"
+            )
+
+            if (response.records.isEmpty()) {
+                Log.w(
+                    tag,
+                    "getBloodPressureData: No blood pressure records found in Health Connect"
+                )
+                Log.w(
+                    tag,
+                    "getBloodPressureData: Check if data exists in Health Connect app and try manual sync"
+                )
+                emit(generateSampleBloodPressureData())
+                return@flow
+            }
+
+            val readings = response.records.mapIndexed { index, record ->
+                val reading = HealthReading(
+                    id = UUID.randomUUID().toString(),
+                    timestamp = record.time.toEpochMilli(),
+                    bloodPressureSystolic = record.systolic.inMillimetersOfMercury.toInt(),
+                    bloodPressureDiastolic = record.diastolic.inMillimetersOfMercury.toInt(),
+                    source = "Health Connect"
+                )
+                Log.d(
+                    tag,
+                    "getBloodPressureData: Reading $index - ${reading.bloodPressureSystolic}/${reading.bloodPressureDiastolic} at ${
+                        java.util.Date(reading.timestamp)
+                    }"
+                )
+                reading
+            }
+
+            Log.d(
+                tag,
+                "getBloodPressureData: Successfully retrieved ${readings.size} blood pressure readings from Health Connect"
+            )
+            emit(readings)
 
         } catch (e: Exception) {
-            Log.e(tag, "Error reading blood pressure data - privacy maintained")
+            Log.e(tag, "getBloodPressureData: Error reading blood pressure data", e)
+            Log.e(
+                tag,
+                "getBloodPressureData: Exception type: ${e.javaClass.simpleName}, Message: ${e.message}")
             emit(generateSampleBloodPressureData())
         }
     }.flowOn(Dispatchers.IO)
@@ -236,43 +364,69 @@ class HealthDataRepository(private val context: Context) {
      */
     fun getStepsData(): Flow<List<HealthReading>> = flow {
         try {
-            healthConnectClient?.let { client ->
-                if (checkPermissions()) {
-                    val endTime = Instant.now()
-                    val startTime = endTime.minusSeconds(24 * 60 * 60) // 24 hours ago
+            Log.d(tag, "getStepsData: Starting steps data retrieval")
 
-                    val request = ReadRecordsRequest(
-                        recordType = StepsRecord::class,
-                        timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
-                    )
-
-                    val response = client.readRecords(request)
-
-                    // Sum up all step records for the day
-                    val totalSteps = response.records.sumOf { it.count }
-                    val readings = if (totalSteps > 0) {
-                        listOf(
-                            HealthReading(
-                                id = UUID.randomUUID().toString(),
-                                timestamp = System.currentTimeMillis(),
-                                stepsCount = totalSteps.toInt(),
-                                source = "Galaxy Watch 4"
-                            )
-                        )
-                    } else emptyList()
-
-                    Log.d(tag, "Retrieved steps data - activity tracking local only")
-                    emit(readings)
-                    return@flow
-                }
+            if (healthConnectClient == null) {
+                Log.w(tag, "getStepsData: Health Connect client is null, using sample data")
+                emit(generateSampleStepsData())
+                return@flow
             }
 
-            // Fallback: Generate sample steps data for demo
-            Log.d(tag, "Using privacy-safe sample steps data")
-            emit(generateSampleStepsData())
+            val client = healthConnectClient!!
+            val hasPermissions = checkPermissions()
+            Log.d(tag, "getStepsData: Permission check result: $hasPermissions")
+
+            if (!hasPermissions) {
+                Log.w(tag, "getStepsData: Permissions not granted, using sample data")
+                emit(generateSampleStepsData())
+                return@flow
+            }
+
+            val endTime = Instant.now()
+            val startTime = endTime.minusSeconds(24 * 60 * 60) // 24 hours ago
+
+            Log.d(tag, "getStepsData: Querying Health Connect from $startTime to $endTime")
+
+            val request = ReadRecordsRequest(
+                recordType = StepsRecord::class,
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime)
+            )
+
+            val response = client.readRecords(request)
+
+            // Sum up all step records for the day
+            val totalSteps = response.records.sumOf { it.count }
+            Log.d(
+                tag,
+                "getStepsData: Found ${response.records.size} step records, total steps: $totalSteps"
+            )
+
+            val readings = if (totalSteps > 0) {
+                listOf(
+                    HealthReading(
+                        id = UUID.randomUUID().toString(),
+                        timestamp = System.currentTimeMillis(),
+                        stepsCount = totalSteps.toInt(),
+                        source = "Health Connect"
+                    )
+                )
+            } else {
+                Log.w(tag, "getStepsData: No steps data found in Health Connect")
+                emptyList()
+            }
+
+            if (readings.isEmpty()) {
+                emit(generateSampleStepsData())
+            } else {
+                Log.d(tag, "getStepsData: Successfully retrieved steps data from Health Connect")
+                emit(readings)
+            }
 
         } catch (e: Exception) {
-            Log.e(tag, "Error reading steps data - privacy maintained")
+            Log.e(tag, "getStepsData: Error reading steps data", e)
+            Log.e(
+                tag,
+                "getStepsData: Exception type: ${e.javaClass.simpleName}, Message: ${e.message}")
             emit(generateSampleStepsData())
         }
     }.flowOn(Dispatchers.IO)
@@ -280,30 +434,33 @@ class HealthDataRepository(private val context: Context) {
     // Sample data generators for demo/fallback purposes
     // Privacy: These are clearly marked as non-real data for demonstration
     private fun generateSampleHeartRateData(): List<HealthReading> {
+        Log.w(tag, "Generating sample heart rate data - no real data available")
         val currentTime = System.currentTimeMillis()
         return (0..23).map { hour ->
             HealthReading(
                 id = UUID.randomUUID().toString(),
                 timestamp = currentTime - (hour * 60 * 60 * 1000),
                 heartRate = Random.nextInt(60, 100),
-                source = "Sample Data - Demo Only"
+                source = "Sample Data (No Health Connect Data)"
             )
         }
     }
 
     private fun generateSampleSpO2Data(): List<HealthReading> {
+        Log.w(tag, "Generating sample SpO2 data - no real data available")
         val currentTime = System.currentTimeMillis()
         return (0..5).map { hour ->
             HealthReading(
                 id = UUID.randomUUID().toString(),
                 timestamp = currentTime - (hour * 4 * 60 * 60 * 1000),
                 oxygenSaturation = Random.nextInt(95, 100),
-                source = "Sample Data - Demo Only"
+                source = "Sample Data (No Health Connect Data)"
             )
         }
     }
 
     private fun generateSampleBloodPressureData(): List<HealthReading> {
+        Log.w(tag, "Generating sample blood pressure data - no real data available")
         val currentTime = System.currentTimeMillis()
         return (0..2).map { day ->
             HealthReading(
@@ -311,18 +468,19 @@ class HealthDataRepository(private val context: Context) {
                 timestamp = currentTime - (day * 24 * 60 * 60 * 1000),
                 bloodPressureSystolic = Random.nextInt(110, 140),
                 bloodPressureDiastolic = Random.nextInt(70, 90),
-                source = "Sample Data - Demo Only"
+                source = "Sample Data (No Health Connect Data)"
             )
         }
     }
 
     private fun generateSampleStepsData(): List<HealthReading> {
+        Log.w(tag, "Generating sample steps data - no real data available")
         return listOf(
             HealthReading(
                 id = UUID.randomUUID().toString(),
                 timestamp = System.currentTimeMillis(),
                 stepsCount = Random.nextInt(5000, 12000),
-                source = "Sample Data - Demo Only"
+                source = "Sample Data (No Health Connect Data)"
             )
         )
     }

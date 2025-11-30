@@ -374,6 +374,74 @@ fun HomeScreen(
 
                     // Dashboard grid 2x2 - Updated with real Samsung Health data
                     Column(modifier = Modifier.fillMaxWidth()) {
+                        // Data source indicator
+                        val heartRateData by healthDataViewModel.heartRateData.observeAsState()
+                        val bloodPressureData by healthDataViewModel.bloodPressureData.observeAsState()
+
+                        val isSampleData =
+                            heartRateData?.firstOrNull()?.source?.contains("Sample Data") == true
+
+                        if (isSampleData) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Info,
+                                        contentDescription = "Info",
+                                        tint = Color(0xFFF57C00),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column {
+                                        Text(
+                                            text = "Using Sample Data",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color(0xFFF57C00)
+                                        )
+                                        Text(
+                                            text = "No Health Connect data found. Check logs for details.",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF795548)
+                                        )
+                                    }
+                                }
+                            }
+                        } else if (bloodPressureData?.isNotEmpty() == true) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Info,
+                                        contentDescription = "Info",
+                                        tint = Color(0xFF4CAF50),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Connected to Health Connect",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF2E7D32)
+                                    )
+                                }
+                            }
+                        }
+
                         Row(modifier = Modifier.fillMaxWidth()) {
                             DashboardCard(
                                 title = "Heart Rate",

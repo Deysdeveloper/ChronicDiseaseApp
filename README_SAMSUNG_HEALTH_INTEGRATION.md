@@ -1,5 +1,33 @@
 # Samsung Galaxy Watch 4 Health Data Integration Guide
 
+## 🎉 Latest Update: Permission Issue FIXED!
+
+**Date:** November 29, 2025
+
+### Issue Resolved
+
+The app was not reading blood pressure data despite having Health Connect access. The problem was
+that the app required ALL 5 permissions including "Active Calories" which wasn't granted. This has
+been fixed!
+
+### What Changed
+
+- ✅ Active Calories is now **optional** (not required)
+- ✅ Only 4 required permissions: Heart Rate, Blood Pressure, SpO2, Steps
+- ✅ Enhanced logging to track permission status
+- ✅ Visual indicators showing real vs sample data
+- ✅ Extended blood pressure query from 7 days to 30 days
+
+### Current Status
+
+✅ App successfully connects to Health Connect  
+✅ Permissions validated correctly  
+⚠️ **Next Step:** You need to sync Samsung Health data to Health Connect
+
+**See `QUICK_START_GUIDE.md` for 5-minute setup to get your blood pressure data showing!**
+
+---
+
 This guide explains how to integrate Samsung Galaxy Watch 4 health data (SpO2, blood pressure, heart
 rate, etc.) into your Chronic Disease Management app using Google's Health Connect API.
 
