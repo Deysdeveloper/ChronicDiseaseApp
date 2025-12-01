@@ -8,6 +8,7 @@ import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.example.chronicdiseaseapp.datamodels.*
 import com.example.chronicdiseaseapp.repository.HealthDataRepository
+import com.example.chronicdiseaseapp.repository.VitalsRepository
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -16,6 +17,7 @@ import java.util.*
 class HealthDataViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = HealthDataRepository(application)
+    private val vitalsRepository = VitalsRepository()
     private val tag = "HealthDataViewModel"
 
     private val _healthMetrics = MutableLiveData<HealthMetrics>()
@@ -283,6 +285,117 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
         val syncTime = _syncStatus.value?.lastSyncTime ?: return "Never"
         val formatter = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
         return formatter.format(Date(syncTime))
+    }
+
+    /**
+     * Load health data from Firebase Realtime Database (instead of Health Connect)
+     * Useful for viewing historical data or when Health Connect is not available
+     */
+    fun loadHealthDataFromFirebase() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+
+            try {
+                Log.d(tag, "Loading health data from Firebase Realtime Database...")
+
+                // Load heart rate from Firebase
+                vitalsRepository.getHeartRateDataFromFirebase()
+                    .catch { e ->
+                        Log.e(tag, "Error loading heart rate from Firebase", e)
+                    }
+                    .collect { readings ->
+                        _heartRateData.value = readings
+                        Log.d(tag, "Loaded ${readings.size} heart rate readings from Firebase")
+                        updateHealthMetrics()
+                    }
+
+                // Load SpO2 from Firebase
+                vitalsRepository.getSpO2DataFromFirebase()
+                    .catch { e ->
+                        Log.e(tag, "Error loading SpO2 from Firebase", e)
+                    }
+                    .collect { readings ->
+                        _spO2Data.value = readings
+                        Log.d(tag, "Loaded ${readings.size} SpO2 readings from Firebase")
+                        updateHealthMetrics()
+                    }
+
+                // Load blood pressure from Firebase
+                vitalsRepository.getBloodPressureDataFromFirebase()
+                    .catch { e ->
+                        Log.e(tag, "Error loading blood pressure from Firebase", e)
+                    }
+                    .collect { readings ->
+                        _bloodPressureData.value = readings
+                        Log.d(tag, "Loaded ${readings.size} blood pressure readings from Firebase")
+                        updateHealthMetrics()
+                    }
+
+                // Load steps from Firebase
+                vitalsRepository.getStepsDataFromFirebase()
+                    .catch { e ->
+                        Log.e(tag, "Error loading steps from Firebase", e)
+                    }
+                    .collect { readings ->
+                        _stepsData.value = readings
+                        Log.d(tag, "Loaded ${readings.size} steps readings from Firebase")
+                        updateHealthMetrics()
+                    }
+
+                _syncStatus.value = SyncStatus(
+                    isConnected = true,
+                    lastSyncTime = System.currentTimeMillis(),
+                    errorMessage = null
+                )
+
+                Log.d(tag, "✅ Successfully loaded all health data from Firebase")
+
+            } catch (e: Exception) {
+                Log.e(tag, "Error loading health data from Firebase", e)
+                _errorMessage.value = "Error loading from Firebase: ${e.message}"
+                _syncStatus.value = SyncStatus(errorMessage = e.message)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Get vitals summary from Firebase
+     */
+    fun getVitalsSummary(onResult: (Map<String, Any?>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val summary = vitalsRepository.getVitalsSummary()
+                Log.d(tag, "Vitals summary: $summary")
+                onResult(summary)
+            } catch (e: Exception) {
+                Log.e(tag, "Error getting vitals summary", e)
+                onResult(emptyMap())
+            }
+        }
+    }
+
+    /**
+     * Clean up old vitals data from Firebase (keep last 30 days)
+     */
+    fun cleanupOldVitals(daysToKeep: Int = 30) {
+        viewModelScope.launch {
+            try {
+                val result = vitalsRepository.cleanupOldData(daysToKeep)
+                if (result.isSuccess) {
+                    Log.d(tag, "✅ Successfully cleaned up old vitals data")
+                } else {
+                    Log.e(
+                        tag,
+                        "❌ Failed to clean up old data: ${result.exceptionOrNull()?.message}"
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Error cleaning up old vitals", e)
+            }
+        }
     }
 
     override fun onCleared() {

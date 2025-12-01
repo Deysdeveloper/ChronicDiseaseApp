@@ -66,6 +66,7 @@ dependencies {
 
     // Work Manager for background data sync
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation(libs.firebase.database)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

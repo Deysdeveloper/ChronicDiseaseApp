@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
@@ -32,11 +33,15 @@ import coil.request.ImageRequest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
 import com.example.chronicdiseaseapp.viewModel.FirebaseAuthViewModel
 import com.example.chronicdiseaseapp.viewModel.HealthDataViewModel
 import com.example.chronicdiseaseapp.utils.*
+import com.example.chronicdiseaseapp.datamodels.HealthReading
 import java.text.SimpleDateFormat
 import java.util.*
 import android.util.Log
@@ -63,6 +68,15 @@ fun HomeScreen(
     val permissionHandler = remember { HealthConnectPermissionHandler(context) }
     var showPrivacyDialog by remember { mutableStateOf(false) }
     var showHealthConsentDialog by remember { mutableStateOf(false) }
+
+    // Trend detail dialog state
+    var showTrendDetail by remember { mutableStateOf<TrendType?>(null) }
+
+    // Observe all health data for trends
+    val heartRateData by healthDataViewModel.heartRateData.observeAsState(emptyList())
+    val bloodPressureData by healthDataViewModel.bloodPressureData.observeAsState(emptyList())
+    val spO2Data by healthDataViewModel.spO2Data.observeAsState(emptyList())
+    val stepsData by healthDataViewModel.stepsData.observeAsState(emptyList())
 
     // Health Connect permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -338,250 +352,244 @@ fun HomeScreen(
 
             when (selectedTab) {
                 BottomTab.Dashboard -> {
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Health data sync status and error handling
-                    healthError?.let { error ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))
-                        ) {
-                            Text(
-                                text = "Health data sync issue: $error",
-                                color = Color(0xFFC62828),
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(12.dp)
-                            )
-                        }
-                    }
-
-                    syncStatus?.let { status ->
-                        if (status.lastSyncTime > 0) {
-                            val syncTime = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
-                                .format(Date(status.lastSyncTime))
-                            Text(
-                                text = "Last sync: $syncTime",
-                                fontSize = 12.sp,
-                                color = Color(0xFF666666),
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Dashboard grid 2x2 - Updated with real Samsung Health data
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        // Data source indicator
-                        val heartRateData by healthDataViewModel.heartRateData.observeAsState()
-                        val bloodPressureData by healthDataViewModel.bloodPressureData.observeAsState()
-
-                        val isSampleData =
-                            heartRateData?.firstOrNull()?.source?.contains("Sample Data") == true
-
-                        if (isSampleData) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        Icons.Default.Info,
-                                        contentDescription = "Info",
-                                        tint = Color(0xFFF57C00),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text(
-                                            text = "Using Sample Data",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            color = Color(0xFFF57C00)
-                                        )
-                                        Text(
-                                            text = "No Health Connect data found. Check logs for details.",
-                                            fontSize = 11.sp,
-                                            color = Color(0xFF795548)
-                                        )
-                                    }
-                                }
-                            }
-                        } else if (bloodPressureData?.isNotEmpty() == true) {
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 8.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9))
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        Icons.Default.Info,
-                                        contentDescription = "Info",
-                                        tint = Color(0xFF4CAF50),
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = "Connected to Health Connect",
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color(0xFF2E7D32)
-                                    )
-                                }
-                            }
-                        }
-
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            DashboardCard(
-                                title = "Heart Rate",
-                                value = healthMetrics?.getDisplayText("heartRate") ?: "—",
-                                unit = "bpm",
-                                isLoading = isHealthDataLoading,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            DashboardCard(
-                                title = "Blood Pressure",
-                                value = healthMetrics?.getDisplayText("bloodPressure") ?: "—/—",
-                                unit = "mmHg",
-                                isLoading = isHealthDataLoading,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(modifier = Modifier.fillMaxWidth()) {
-                            DashboardCard(
-                                title = "SpO2",
-                                value = healthMetrics?.getDisplayText("spO2") ?: "—",
-                                unit = "%",
-                                isLoading = isHealthDataLoading,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            DashboardCard(
-                                title = "Steps",
-                                value = healthMetrics?.getDisplayText("steps") ?: "—",
-                                unit = "steps",
-                                isLoading = isHealthDataLoading,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = "Trends",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF222222),
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    )
-
-                    // Trends Card with updated data
-                    Card(
+                    // Make entire dashboard scrollable
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f, fill = false),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        shape = RoundedCornerShape(16.dp)
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(
-                                        "Heart Rate Trends",
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF555555)
-                                    )
-                                    Text(
-                                        healthMetrics?.getDisplayText("heartRate") + " bpm"
-                                            ?: "— bpm",
-                                        fontSize = 28.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF222222)
-                                    )
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    val trendText = when (healthMetrics?.weeklyTrend) {
-                                        com.example.chronicdiseaseapp.datamodels.HealthTrend.IMPROVING -> "+2%"
-                                        com.example.chronicdiseaseapp.datamodels.HealthTrend.DECLINING -> "-3%"
-                                        else -> "0%"
-                                    }
-                                    val trendColor = when (healthMetrics?.weeklyTrend) {
-                                        com.example.chronicdiseaseapp.datamodels.HealthTrend.IMPROVING -> Color(
-                                            0xFF4CAF50
-                                        )
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                                        com.example.chronicdiseaseapp.datamodels.HealthTrend.DECLINING -> Color(
-                                            0xFFD64545
-                                        )
-
-                                        else -> Color(0xFF666666)
-                                    }
-                                    Text(
-                                        trendText,
-                                        color = trendColor,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    Text("Last 7 Days", color = Color(0xFF999999), fontSize = 12.sp)
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Canvas(
+                        // Health data sync status and error handling
+                        healthError?.let { error ->
+                            Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .height(140.dp)
+                                    .padding(vertical = 4.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE))
                             ) {
-                                val width = size.width
-                                val height = size.height
-                                val points = listOf(0f, 0.2f, 0.1f, 0.4f, 0.15f, 0.8f, 0.5f, 0.7f)
-                                val path = Path()
-                                points.forEachIndexed { index, v ->
-                                    val x = width * (index.toFloat() / (points.size - 1))
-                                    val y = height * (1f - v)
-                                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                                }
-                                drawPath(
-                                    path = path,
-                                    color = Color(0xFF64A9FF),
-                                    style = Stroke(width = 6f)
+                                Text(
+                                    text = "Health data sync issue: $error",
+                                    color = Color(0xFFC62828),
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(12.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                listOf(
-                                    "Mon",
-                                    "Tue",
-                                    "Wed",
-                                    "Thu",
-                                    "Fri",
-                                    "Sat",
-                                    "Sun"
-                                ).forEach { day ->
-                                    Text(day, color = Color(0xFF999999), fontSize = 12.sp)
-                                }
+                        }
+
+                        syncStatus?.let { status ->
+                            if (status.lastSyncTime > 0) {
+                                val syncTime =
+                                    SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
+                                        .format(Date(status.lastSyncTime))
+                                Text(
+                                    text = "Last sync: $syncTime",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF666666),
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
                             }
                         }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Dashboard grid 2x2 - Updated with real Samsung Health data
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            // Data source indicator
+                            val heartRateData by healthDataViewModel.heartRateData.observeAsState()
+                            val bloodPressureData by healthDataViewModel.bloodPressureData.observeAsState()
+
+                            val isSampleData =
+                                heartRateData?.firstOrNull()?.source?.contains("Sample Data") == true
+
+                            if (isSampleData) {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = Color(
+                                            0xFFFFF8E1
+                                        )
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Info,
+                                            contentDescription = "Info",
+                                            tint = Color(0xFFF57C00),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Column {
+                                            Text(
+                                                text = "Using Sample Data",
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = Color(0xFFF57C00)
+                                            )
+                                            Text(
+                                                text = "No Health Connect data found. Check logs for details.",
+                                                fontSize = 11.sp,
+                                                color = Color(0xFF795548)
+                                            )
+                                        }
+                                    }
+                                }
+                            } else if (bloodPressureData?.isNotEmpty() == true) {
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = Color(
+                                            0xFFE8F5E9
+                                        )
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Info,
+                                            contentDescription = "Info",
+                                            tint = Color(0xFF4CAF50),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Connected to Health Connect",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF2E7D32)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                DashboardCard(
+                                    title = "Heart Rate",
+                                    value = healthMetrics?.getDisplayText("heartRate") ?: "—",
+                                    unit = "bpm",
+                                    isLoading = isHealthDataLoading,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                DashboardCard(
+                                    title = "Blood Pressure",
+                                    value = healthMetrics?.getDisplayText("bloodPressure") ?: "—/—",
+                                    unit = "mmHg",
+                                    isLoading = isHealthDataLoading,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                DashboardCard(
+                                    title = "SpO2",
+                                    value = healthMetrics?.getDisplayText("spO2") ?: "—",
+                                    unit = "%",
+                                    isLoading = isHealthDataLoading,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                DashboardCard(
+                                    title = "Steps",
+                                    value = healthMetrics?.getDisplayText("steps") ?: "—",
+                                    unit = "steps",
+                                    isLoading = isHealthDataLoading,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Text(
+                            text = "Trends",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF222222),
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+
+                        // All Trend Cards (no separate scroll - part of main scroll)
+                        // Heart Rate Trend Card
+                        TrendCard(
+                            title = "Heart Rate Trends",
+                            currentValue = healthMetrics?.getDisplayText("heartRate") ?: "—",
+                            unit = "bpm",
+                            trend = healthMetrics?.weeklyTrend,
+                            color = Color(0xFFFF6B6B),
+                            dataPoints = heartRateData.takeLast(7)
+                                .mapNotNull { it.heartRate?.toFloat() },
+                            onClick = { showTrendDetail = TrendType.HEART_RATE }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // SpO2 Trend Card
+                        TrendCard(
+                            title = "SpO2 Trends",
+                            currentValue = healthMetrics?.getDisplayText("spO2") ?: "—",
+                            unit = "%",
+                            trend = healthMetrics?.weeklyTrend,
+                            color = Color(0xFF4ECDC4),
+                            dataPoints = spO2Data.takeLast(7)
+                                .mapNotNull { it.oxygenSaturation?.toFloat() },
+                            onClick = { showTrendDetail = TrendType.SPO2 }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Blood Pressure Trend Card
+                        TrendCard(
+                            title = "Blood Pressure Trends",
+                            currentValue = healthMetrics?.getDisplayText("bloodPressure") ?: "—/—",
+                            unit = "mmHg",
+                            trend = healthMetrics?.weeklyTrend,
+                            color = Color(0xFF95E1D3),
+                            dataPoints = bloodPressureData.takeLast(7)
+                                .mapNotNull { it.bloodPressureSystolic?.toFloat() },
+                            onClick = { showTrendDetail = TrendType.BLOOD_PRESSURE }
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Steps Trend Card
+                        TrendCard(
+                            title = "Steps Trends",
+                            currentValue = healthMetrics?.getDisplayText("steps") ?: "—",
+                            unit = "steps",
+                            trend = healthMetrics?.weeklyTrend,
+                            color = Color(0xFFFFBE76),
+                            dataPoints = stepsData.takeLast(7)
+                                .mapNotNull { it.stepsCount?.toFloat() },
+                            onClick = { showTrendDetail = TrendType.STEPS }
+                        )
+
+                        // Add bottom padding for better scrolling experience
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+
+                    // Trend Detail Dialog
+                    showTrendDetail?.let { trendType ->
+                        TrendDetailDialog(
+                            trendType = trendType,
+                            data = when (trendType) {
+                                TrendType.HEART_RATE -> heartRateData.sortedBy { it.timestamp }
+                                TrendType.SPO2 -> spO2Data.sortedBy { it.timestamp }
+                                TrendType.BLOOD_PRESSURE -> bloodPressureData.sortedBy { it.timestamp }
+                                TrendType.STEPS -> stepsData.sortedBy { it.timestamp }
+                            },
+                            onDismiss = { showTrendDetail = null }
+                        )
                     }
                 }
 
@@ -648,6 +656,351 @@ private fun DashboardCard(
     }
 }
 
+@Composable
+private fun TrendCard(
+    title: String,
+    currentValue: String,
+    unit: String,
+    trend: com.example.chronicdiseaseapp.datamodels.HealthTrend?,
+    color: Color,
+    dataPoints: List<Float>,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        title,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF555555),
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "$currentValue $unit",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF222222)
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    val trendText = when (trend) {
+                        com.example.chronicdiseaseapp.datamodels.HealthTrend.IMPROVING -> "+2%"
+                        com.example.chronicdiseaseapp.datamodels.HealthTrend.DECLINING -> "-3%"
+                        else -> "0%"
+                    }
+                    val trendColor = when (trend) {
+                        com.example.chronicdiseaseapp.datamodels.HealthTrend.IMPROVING -> Color(
+                            0xFF4CAF50
+                        )
+
+                        com.example.chronicdiseaseapp.datamodels.HealthTrend.DECLINING -> Color(
+                            0xFFD64545
+                        )
+
+                        else -> Color(0xFF666666)
+                    }
+                    Text(
+                        trendText,
+                        color = trendColor,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+                    Text("Last 7 Days", color = Color(0xFF999999), fontSize = 11.sp)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Mini trend chart
+            if (dataPoints.isNotEmpty()) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                ) {
+                    val width = size.width
+                    val height = size.height
+
+                    // Normalize data points to 0-1 range
+                    val minValue = dataPoints.minOrNull() ?: 0f
+                    val maxValue = dataPoints.maxOrNull() ?: 1f
+                    val range = maxValue - minValue
+
+                    val normalizedPoints = if (range > 0) {
+                        dataPoints.map { (it - minValue) / range }
+                    } else {
+                        dataPoints.map { 0.5f }
+                    }
+
+                    val path = Path()
+                    normalizedPoints.forEachIndexed { index, v ->
+                        val x =
+                            width * (index.toFloat() / (normalizedPoints.size - 1).coerceAtLeast(1))
+                        val y = height * (1f - v)
+                        if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                    }
+                    drawPath(
+                        path = path,
+                        color = color,
+                        style = Stroke(width = 4f)
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "No data available",
+                        color = Color(0xFF999999),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                "Tap to view details",
+                color = color,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.align(Alignment.End)
+            )
+        }
+    }
+}
+
+@Composable
+private fun TrendDetailDialog(
+    trendType: TrendType,
+    data: List<HealthReading>,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.8f),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = when (trendType) {
+                            TrendType.HEART_RATE -> "Heart Rate History"
+                            TrendType.SPO2 -> "SpO2 History"
+                            TrendType.BLOOD_PRESSURE -> "Blood Pressure History"
+                            TrendType.STEPS -> "Steps History"
+                        },
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF222222)
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close",
+                            tint = Color(0xFF666666)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Text(
+                    text = "Showing ${data.size} readings from oldest to latest",
+                    fontSize = 13.sp,
+                    color = Color(0xFF666666)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Data list
+                if (data.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "No data",
+                                tint = Color(0xFFCCCCCC),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "No data available",
+                                color = Color(0xFF999999),
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        data.forEachIndexed { index, reading ->
+                            TrendDataItem(
+                                reading = reading,
+                                trendType = trendType,
+                                index = index + 1,
+                                total = data.size
+                            )
+                            if (index < data.size - 1) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Close button
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF64A9FF)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Close", modifier = Modifier.padding(vertical = 4.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrendDataItem(
+    reading: HealthReading,
+    trendType: TrendType,
+    index: Int,
+    total: Int
+) {
+    val dateFormat = SimpleDateFormat("MMM dd, yyyy hh:mm a", Locale.getDefault())
+    val dateStr = dateFormat.format(Date(reading.timestamp))
+
+    val (value, unit, color) = when (trendType) {
+        TrendType.HEART_RATE -> Triple(
+            reading.heartRate?.toString() ?: "—",
+            "bpm",
+            Color(0xFFFF6B6B)
+        )
+
+        TrendType.SPO2 -> Triple(
+            reading.oxygenSaturation?.toString() ?: "—",
+            "%",
+            Color(0xFF4ECDC4)
+        )
+
+        TrendType.BLOOD_PRESSURE -> Triple(
+            if (reading.bloodPressureSystolic != null && reading.bloodPressureDiastolic != null) {
+                "${reading.bloodPressureSystolic}/${reading.bloodPressureDiastolic}"
+            } else "—/—",
+            "mmHg",
+            Color(0xFF95E1D3)
+        )
+
+        TrendType.STEPS -> Triple(
+            reading.stepsCount?.toString() ?: "—",
+            "steps",
+            Color(0xFFFFBE76)
+        )
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8F9FA)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Reading number and date
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .background(color.copy(alpha = 0.2f), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "#$index",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = color
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = dateStr,
+                        fontSize = 12.sp,
+                        color = Color(0xFF666666)
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = reading.source,
+                    fontSize = 10.sp,
+                    color = Color(0xFF999999)
+                )
+            }
+
+            // Value
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = value,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = color
+                )
+                Text(
+                    text = unit,
+                    fontSize = 11.sp,
+                    color = Color(0xFF999999)
+                )
+            }
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun HomeScreenPreview() {
@@ -655,3 +1008,5 @@ fun HomeScreenPreview() {
 }
 
 private enum class BottomTab { Dashboard, Insights, Profile }
+
+private enum class TrendType { HEART_RATE, SPO2, BLOOD_PRESSURE, STEPS }

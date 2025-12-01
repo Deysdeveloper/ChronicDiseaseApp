@@ -8,6 +8,7 @@ import androidx.health.connect.client.records.*
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.example.chronicdiseaseapp.datamodels.*
+import com.example.chronicdiseaseapp.repository.VitalsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -20,6 +21,7 @@ class HealthDataRepository(private val context: Context) {
 
     private val tag = "HealthDataRepository"
     private var healthConnectClient: HealthConnectClient? = null
+    private val vitalsRepository = VitalsRepository()
 
     // Health Connect permissions needed
     // Required permissions - these are essential for the app to function
@@ -196,6 +198,20 @@ class HealthDataRepository(private val context: Context) {
                 tag,
                 "getHeartRateData: Successfully retrieved ${readings.size} heart rate readings from Health Connect"
             )
+
+            // Save to Firebase Realtime Database for current user
+            if (readings.isNotEmpty()) {
+                val saveResult = vitalsRepository.saveHeartRateData(readings)
+                if (saveResult.isSuccess) {
+                    Log.d(tag, "getHeartRateData: ✅ Saved to Firebase Realtime Database")
+                } else {
+                    Log.e(
+                        tag,
+                        "getHeartRateData: ❌ Failed to save to Firebase: ${saveResult.exceptionOrNull()?.message}"
+                    )
+                }
+            }
+
             emit(readings)
 
         } catch (e: Exception) {
@@ -262,6 +278,20 @@ class HealthDataRepository(private val context: Context) {
                 tag,
                 "getSpO2Data: Successfully retrieved ${readings.size} SpO2 readings from Health Connect"
             )
+
+            // Save to Firebase Realtime Database for current user
+            if (readings.isNotEmpty()) {
+                val saveResult = vitalsRepository.saveSpO2Data(readings)
+                if (saveResult.isSuccess) {
+                    Log.d(tag, "getSpO2Data: ✅ Saved to Firebase Realtime Database")
+                } else {
+                    Log.e(
+                        tag,
+                        "getSpO2Data: ❌ Failed to save to Firebase: ${saveResult.exceptionOrNull()?.message}"
+                    )
+                }
+            }
+
             emit(readings)
 
         } catch (e: Exception) {
@@ -347,6 +377,20 @@ class HealthDataRepository(private val context: Context) {
                 tag,
                 "getBloodPressureData: Successfully retrieved ${readings.size} blood pressure readings from Health Connect"
             )
+
+            // Save to Firebase Realtime Database for current user
+            if (readings.isNotEmpty()) {
+                val saveResult = vitalsRepository.saveBloodPressureData(readings)
+                if (saveResult.isSuccess) {
+                    Log.d(tag, "getBloodPressureData: ✅ Saved to Firebase Realtime Database")
+                } else {
+                    Log.e(
+                        tag,
+                        "getBloodPressureData: ❌ Failed to save to Firebase: ${saveResult.exceptionOrNull()?.message}"
+                    )
+                }
+            }
+
             emit(readings)
 
         } catch (e: Exception) {
@@ -419,6 +463,18 @@ class HealthDataRepository(private val context: Context) {
                 emit(generateSampleStepsData())
             } else {
                 Log.d(tag, "getStepsData: Successfully retrieved steps data from Health Connect")
+
+                // Save to Firebase Realtime Database for current user
+                val saveResult = vitalsRepository.saveStepsData(readings)
+                if (saveResult.isSuccess) {
+                    Log.d(tag, "getStepsData: ✅ Saved to Firebase Realtime Database")
+                } else {
+                    Log.e(
+                        tag,
+                        "getStepsData: ❌ Failed to save to Firebase: ${saveResult.exceptionOrNull()?.message}"
+                    )
+                }
+
                 emit(readings)
             }
 
