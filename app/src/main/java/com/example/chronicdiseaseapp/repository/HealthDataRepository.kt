@@ -265,11 +265,28 @@ class HealthDataRepository(private val context: Context) {
                 return@flow
             }
 
-            val readings = response.records.map { record ->
+            val readings = response.records.mapIndexed { index, record ->
+                // Health Connect returns percentage as 0.0-1.0 (e.g., 0.98 for 98%)
+                // So we multiply by 100 to get 98
+                // BUT: Some devices (like Galaxy Watch 4) already send it as 98.0
+                // So we need to detect and handle both cases
+                val rawValue = record.percentage.value
+                val spo2Value = when {
+                    rawValue <= 1.0 -> (rawValue * 100).toInt()  // 0.98 → 98
+                    rawValue > 100.0 -> (rawValue / 100).toInt() // 9800 → 98 (device bug)
+                    else -> rawValue.toInt()                      // 98.0 → 98 (already correct)
+                }
+
+
+                // Log the conversion for debugging
+                if (index < 3) { // Log first 3 readings only
+                    Log.d(tag, "getSpO2Data: Raw value: $rawValue → Corrected: $spo2Value%")
+                }
+
                 HealthReading(
                     id = UUID.randomUUID().toString(),
                     timestamp = record.time.toEpochMilli(),
-                    oxygenSaturation = (record.percentage.value * 100).toInt(),
+                    oxygenSaturation = spo2Value,
                     source = "Health Connect"
                 )
             }

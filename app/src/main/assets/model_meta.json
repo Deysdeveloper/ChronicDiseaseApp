@@ -1,0 +1,18 @@
+{
+  "min": 92.21399535887706,
+  "max": 100.0,
+  "threshold": 0.018862107768654823,
+  "window_len": 10,
+  "target": "spo2",
+  "k_votes": 1,
+  "delta": 3.0,
+  "abs_critical_low_spo2": 90.0,
+  "abs_critical_high_systolic": 180.0,
+  "abs_critical_low_systolic": 90.0,
+  "abs_critical_high_diastolic": 85.0,
+  "abs_critical_low_diastolic": 40.0,
+  "abs_critical_high_heart_rate": 83.0,
+  "abs_critical_low_heart_rate": 40.0,
+  "model_version": "1.0.0",
+  "description": "Conv1D Autoencoder for SpO2 anomaly detection"
+}

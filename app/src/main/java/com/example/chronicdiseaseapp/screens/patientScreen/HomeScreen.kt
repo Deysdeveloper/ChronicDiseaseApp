@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
@@ -40,16 +41,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import com.example.chronicdiseaseapp.viewModel.FirebaseAuthViewModel
 import com.example.chronicdiseaseapp.viewModel.HealthDataViewModel
+import com.example.chronicdiseaseapp.viewModel.AnomalyDetectionViewModel
 import com.example.chronicdiseaseapp.utils.*
 import com.example.chronicdiseaseapp.datamodels.HealthReading
+import com.example.chronicdiseaseapp.ml.AnomalyResult
+import com.example.chronicdiseaseapp.ml.AnomalySeverity
+import com.example.chronicdiseaseapp.ml.ModelTester
 import java.text.SimpleDateFormat
 import java.util.*
 import android.util.Log
+import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
     authViewModel: FirebaseAuthViewModel = viewModel(),
     healthDataViewModel: HealthDataViewModel = viewModel(),
+    anomalyViewModel: AnomalyDetectionViewModel = viewModel(),
     onSignOut: () -> Unit = {},
     onOpenSettings: () -> Unit = {}
 ) {
@@ -164,6 +171,12 @@ fun HomeScreen(
                     label = { Text("Insights") }
                 )
                 NavigationBarItem(
+                    selected = selectedTab == BottomTab.Analysis,
+                    onClick = { selectedTab = BottomTab.Analysis },
+                    icon = { Icon(Icons.Default.Star, contentDescription = "Analysis") },
+                    label = { Text("Analysis") }
+                )
+                NavigationBarItem(
                     selected = selectedTab == BottomTab.Profile,
                     onClick = { selectedTab = BottomTab.Profile },
                     icon = { Icon(Icons.Default.Person, contentDescription = "Profile") },
@@ -190,9 +203,6 @@ fun HomeScreen(
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF222222)
                 )
-                IconButton(onClick = onOpenSettings) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings")
-                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -334,6 +344,14 @@ fun HomeScreen(
                 } else if (selectedTab == BottomTab.Insights) {
                     Text(
                         text = "Insights",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF222222)
+                    )
+                    Spacer(modifier = Modifier.width(24.dp))
+                } else if (selectedTab == BottomTab.Analysis) {
+                    Text(
+                        text = "Health Analysis",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF222222)
@@ -595,6 +613,16 @@ fun HomeScreen(
 
                 BottomTab.Insights -> {
                     InsightsScreen()
+                }
+
+                BottomTab.Analysis -> {
+                    HealthAnalysisScreen(
+                        heartRateData = heartRateData,
+                        bloodPressureData = bloodPressureData,
+                        spO2Data = spO2Data,
+                        stepsData = stepsData,
+                        anomalyViewModel = anomalyViewModel
+                    )
                 }
 
                 BottomTab.Profile -> {
@@ -1001,12 +1029,596 @@ private fun TrendDataItem(
     }
 }
 
+@Composable
+private fun HealthAnalysisScreen(
+    heartRateData: List<HealthReading>,
+    bloodPressureData: List<HealthReading>,
+    spO2Data: List<HealthReading>,
+    stepsData: List<HealthReading>,
+    anomalyViewModel: AnomalyDetectionViewModel
+) {
+    // Observe ML analysis results
+    val anomalies by anomalyViewModel.anomalies.observeAsState(emptyList())
+    val isAnalyzing by anomalyViewModel.isAnalyzing.observeAsState(false)
+    val modelInitialized by anomalyViewModel.modelInitialized.observeAsState(false)
+    val errorMessage by anomalyViewModel.errorMessage.observeAsState()
+    val hasAnalyzed by anomalyViewModel.hasAnalyzed.observeAsState(false)
+
+    val context = LocalContext.current
+    var testResults by remember { mutableStateOf<String?>(null) }
+
+    // Calculate valid reading counts (filter corrupted data)
+    val validHeartRateCount = remember(heartRateData) {
+        heartRateData.count { reading ->
+            val hr = reading.heartRate?.toFloat()
+            hr != null && hr >= 20f && hr <= 250f
+        }
+    }
+
+    val validSpO2Count = remember(spO2Data) {
+        spO2Data.count { reading ->
+            val spo2 = reading.oxygenSaturation?.toFloat()
+            spo2 != null && spo2 >= 0f && spo2 <= 100f
+        }
+    }
+
+    val validSystolicCount = remember(bloodPressureData) {
+        bloodPressureData.count { reading ->
+            val sys = reading.bloodPressureSystolic?.toFloat()
+            sys != null && sys >= 60f && sys <= 250f
+        }
+    }
+
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(vertical = 16.dp)
+    ) {
+
+        // Model Status Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = if (modelInitialized) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+            ),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (modelInitialized) "✅" else "⏳",
+                    fontSize = 24.sp
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = if (modelInitialized) "ML Model Ready" else "Initializing ML Model...",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = if (modelInitialized) Color(0xFF2E7D32) else Color(0xFFF57C00)
+                    )
+                    Text(
+                        text = if (modelInitialized)
+                            "AI-powered anomaly detection active"
+                        else
+                            "Loading TensorFlow Lite model",
+                        fontSize = 12.sp,
+                        color = Color(0xFF666666)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Test Model Button
+        if (modelInitialized) {
+            Button(
+                onClick = {
+                    testResults = "Running tests..."
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                        val tester = ModelTester(context)
+                        val results = tester.runTests()
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                            testResults = if (results.allPassed()) {
+                                "✅ ALL TESTS PASSED (${results.passedCount()}/5)"
+                            } else {
+                                "⚠️ ${results.passedCount()}/5 TESTS PASSED - Check Logcat"
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF2196F3)
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("🧪 Run Model Tests", fontSize = 14.sp)
+            }
+
+            // Test Results Display
+            testResults?.let { result ->
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (result.contains("ALL TESTS PASSED"))
+                            Color(0xFFE8F5E9) else Color(0xFFFFF9C4)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = result,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF222222),
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Data Summary Section
+        Text(
+            text = "Available Data for Analysis",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF222222)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Heart Rate Data
+        AnalysisDataCard(
+            title = "Heart Rate Readings",
+            dataCount = heartRateData.size,
+            validCount = validHeartRateCount,
+            icon = "❤️",
+            color = Color(0xFFFF6B6B),
+            description = "BPM measurements",
+            onAnalyze = if (modelInitialized && validHeartRateCount >= 10) {
+                { anomalyViewModel.analyzeHeartRate(heartRateData) }
+            } else null
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Blood Pressure Data
+        AnalysisDataCard(
+            title = "Blood Pressure Readings",
+            dataCount = bloodPressureData.size,
+            validCount = validSystolicCount,
+            icon = "🩺",
+            color = Color(0xFF95E1D3),
+            description = "Systolic/Diastolic measurements",
+            onAnalyze = if (modelInitialized && validSystolicCount >= 10) {
+                { anomalyViewModel.analyzeBloodPressure(bloodPressureData, useSystolic = true) }
+            } else null
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // SpO2 Data
+        AnalysisDataCard(
+            title = "SpO2 Readings",
+            dataCount = spO2Data.size,
+            validCount = validSpO2Count,
+            icon = "🫁",
+            color = Color(0xFF4ECDC4),
+            description = "Oxygen saturation levels",
+            onAnalyze = if (modelInitialized && validSpO2Count >= 10) {
+                { anomalyViewModel.analyzeSpO2(spO2Data) }
+            } else null
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Analyze All Button
+        if (modelInitialized) {
+            Button(
+                onClick = {
+                    anomalyViewModel.analyzeAllVitals(
+                        heartRateData = heartRateData,
+                        spO2Data = spO2Data,
+                        bloodPressureData = bloodPressureData
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF9C27B0)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                enabled = !isAnalyzing
+            ) {
+                if (isAnalyzing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Analyzing...")
+                } else {
+                    Text("🔍 Analyze All Vitals", fontSize = 16.sp)
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Error Message
+        errorMessage?.let { error ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Error",
+                        tint = Color(0xFFC62828),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = error,
+                        fontSize = 13.sp,
+                        color = Color(0xFFC62828)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+
+        // ML Analysis Results
+        Text(
+            text = "Anomaly Detection Results",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF222222)
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (anomalies.isEmpty() && !isAnalyzing && !hasAnalyzed) {
+            // No analysis has been run yet
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "🤖",
+                        fontSize = 48.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "No Analysis Yet",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF222222)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Click 'Analyze All Vitals' or individual cards to detect anomalies",
+                        fontSize = 13.sp,
+                        color = Color(0xFF666666),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+        } else if (anomalies.isEmpty() && !isAnalyzing && hasAnalyzed) {
+            // Analysis completed with 0 anomalies - show success message
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFFE8F5E9)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "✅",
+                        fontSize = 48.sp
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "All Clear!",
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2E7D32)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Analysis complete: No anomalies detected. Your health data appears normal! 🎉",
+                        fontSize = 13.sp,
+                        color = Color(0xFF2E7D32),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "The ML model analyzed your vitals and found no concerning patterns.",
+                        fontSize = 11.sp,
+                        color = Color(0xFF666666),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+        } else if (anomalies.isEmpty() && isAnalyzing) {
+            // Analyzing
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(48.dp),
+                        color = Color(0xFF9C27B0)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Analyzing Your Health Data...",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF222222)
+                    )
+                }
+            }
+        } else {
+            // Display anomalies
+            anomalies.forEach { anomaly ->
+                AnomalyCard(anomaly = anomaly)
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun AnomalyCard(anomaly: AnomalyResult) {
+    val dateFormat = SimpleDateFormat("MMM dd, yyyy hh:mm a", Locale.getDefault())
+    val dateStr = dateFormat.format(Date(anomaly.timestamp))
+
+    val (bgColor, borderColor) = when (anomaly.severity) {
+        AnomalySeverity.CRITICAL -> Pair(Color(0xFFFFEBEE), Color(0xFFD32F2F))
+        AnomalySeverity.HIGH -> Pair(Color(0xFFFFF3E0), Color(0xFFF57C00))
+        AnomalySeverity.MEDIUM -> Pair(Color(0xFFFFF9C4), Color(0xFFFBC02D))
+        AnomalySeverity.LOW -> Pair(Color(0xFFE8F5E9), Color(0xFF4CAF50))
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = bgColor),
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(2.dp, borderColor)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = anomaly.getMessage(),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF222222),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(
+                        text = "Time",
+                        fontSize = 11.sp,
+                        color = Color(0xFF666666)
+                    )
+                    Text(
+                        text = dateStr,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF222222)
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "Deviation",
+                        fontSize = 11.sp,
+                        color = Color(0xFF666666)
+                    )
+                    Text(
+                        text = "±${String.format("%.1f", anomaly.deviation)}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Color(0xFF222222)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Confidence: ${anomaly.votes} votes",
+                    fontSize = 11.sp,
+                    color = Color(0xFF666666)
+                )
+                Text(
+                    text = "Expected: ${String.format("%.1f", anomaly.localMedian)}",
+                    fontSize = 11.sp,
+                    color = Color(0xFF666666)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AnalysisDataCard(
+    title: String,
+    dataCount: Int,
+    validCount: Int? = null,
+    icon: String,
+    color: Color,
+    description: String,
+    onAnalyze: (() -> Unit)? = null
+) {
+    val hasInvalidData = validCount != null && validCount < dataCount
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (onAnalyze != null) Modifier.clickable { onAnalyze() }
+                else Modifier
+            ),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(color.copy(alpha = 0.2f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = icon,
+                        fontSize = 24.sp
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = title,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF222222)
+                    )
+                    Text(
+                        text = description,
+                        fontSize = 12.sp,
+                        color = Color(0xFF999999)
+                    )
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                // Show valid count if different from total
+                if (hasInvalidData) {
+                    Text(
+                        text = "${validCount}",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = color
+                    )
+                    Text(
+                        text = "valid / $dataCount total",
+                        fontSize = 10.sp,
+                        color = Color(0xFFFF9800)
+                    )
+                } else {
+                    Text(
+                        text = dataCount.toString(),
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = color
+                    )
+                    Text(
+                        text = "readings",
+                        fontSize = 11.sp,
+                        color = Color(0xFF999999)
+                    )
+                }
+                if (onAnalyze != null) {
+                    Text(
+                        text = "Tap to analyze",
+                        fontSize = 10.sp,
+                        color = color,
+                        fontWeight = FontWeight.Medium
+                    )
+                } else if (hasInvalidData && (validCount ?: 0) < 10) {
+                    Text(
+                        text = "Need ${10 - (validCount ?: 0)} more",
+                        fontSize = 10.sp,
+                        color = Color(0xFFF44336),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Preview(showBackground = true)
 @Composable
 fun HomeScreenPreview() {
     HomeScreen()
 }
 
-private enum class BottomTab { Dashboard, Insights, Profile }
+private enum class BottomTab { Dashboard, Insights, Analysis, Profile }
 
 private enum class TrendType { HEART_RATE, SPO2, BLOOD_PRESSURE, STEPS }

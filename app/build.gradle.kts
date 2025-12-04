@@ -37,6 +37,19 @@ android {
     }
     buildFeatures {
         compose = true
+        mlModelBinding = true
+    }
+
+    // Allow TFLite model files in assets
+    aaptOptions {
+        noCompress("tflite")
+    }
+
+    // Configure packaging options for 16KB page alignment
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
     }
 }
 
@@ -67,6 +80,10 @@ dependencies {
     // Work Manager for background data sync
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation(libs.firebase.database)
+
+    // TensorFlow Lite for ML model inference (updated for 16KB page size support)
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
