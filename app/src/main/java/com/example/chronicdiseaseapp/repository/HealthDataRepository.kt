@@ -1,6 +1,7 @@
 package com.example.chronicdiseaseapp.repository
 
 import android.content.Context
+import android.provider.Settings
 import android.util.Log
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
@@ -9,10 +10,12 @@ import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.example.chronicdiseaseapp.datamodels.*
 import com.example.chronicdiseaseapp.repository.VitalsRepository
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.util.*
 import kotlin.random.Random
@@ -22,6 +25,27 @@ class HealthDataRepository(private val context: Context) {
     private val tag = "HealthDataRepository"
     private var healthConnectClient: HealthConnectClient? = null
     private val vitalsRepository = VitalsRepository()
+    private val auth by lazy { FirebaseAuth.getInstance() }
+
+    // Get device ID for tracking where data came from
+    private fun getDeviceId(): String {
+        return try {
+            Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+                ?: "unknown"
+        } catch (e: Exception) {
+            "unknown"
+        }
+    }
+
+    // ✅ Get account creation timestamp to filter out pre-account device data
+    private fun accountCreationMillis(): Long {
+        return try {
+            auth.currentUser?.metadata?.creationTimestamp ?: 0L
+        } catch (e: Exception) {
+            Log.w(tag, "Could not get account creation timestamp", e)
+            0L
+        }
+    }
 
     // Health Connect permissions needed
     // Required permissions - these are essential for the app to function
@@ -146,8 +170,8 @@ class HealthDataRepository(private val context: Context) {
             Log.d(tag, "getHeartRateData: Starting heart rate data retrieval")
 
             if (healthConnectClient == null) {
-                Log.w(tag, "getHeartRateData: Health Connect client is null, using sample data")
-                emit(generateSampleHeartRateData())
+                Log.w(tag, "getHeartRateData: Health Connect client is null")
+                emit(emptyList())
                 return@flow
             }
 
@@ -156,13 +180,13 @@ class HealthDataRepository(private val context: Context) {
             Log.d(tag, "getHeartRateData: Permission check result: $hasPermissions")
 
             if (!hasPermissions) {
-                Log.w(tag, "getHeartRateData: Permissions not granted, using sample data")
-                emit(generateSampleHeartRateData())
+                Log.w(tag, "getHeartRateData: Permissions not granted")
+                emit(emptyList())
                 return@flow
             }
 
             val endTime = Instant.now()
-            val startTime = endTime.minusSeconds(24 * 60 * 60) // 24 hours ago
+            val startTime = endTime.minusSeconds(7 * 24 * 60 * 60) // 7 days ago
 
             Log.d(tag, "getHeartRateData: Querying Health Connect from $startTime to $endTime")
 
@@ -174,15 +198,49 @@ class HealthDataRepository(private val context: Context) {
             val response = client.readRecords(request)
             val readings = mutableListOf<HealthReading>()
 
+            // Check if user is authenticated BEFORE processing data
+            val currentUid = auth.currentUser?.uid
+            if (currentUid == null) {
+                Log.e(
+                    tag,
+                    "getHeartRateData: ⚠️ No authenticated user — skipping Firebase save (prevents data mix-up)"
+                )
+                emit(emptyList())
+                return@flow
+            }
+
+            val deviceId = getDeviceId()
+            val importedAt = System.currentTimeMillis()
+            val acctCreated = accountCreationMillis()
+
+            Log.d(
+                tag,
+                "getHeartRateData: Account created at: $acctCreated, filtering pre-account data"
+            )
+
             // HeartRateRecord contains samples, each with beatsPerMinute and time
             response.records.forEach { record ->
                 record.samples.forEach { sample ->
+                    val sampleMillis = sample.time.toEpochMilli()
+
+                    // ✅ Skip readings that predate account creation
+                    if (sampleMillis < acctCreated) {
+                        Log.d(
+                            tag,
+                            "Skipping HR sample at $sampleMillis — predates account creation $acctCreated"
+                        )
+                        return@forEach
+                    }
+
                     readings.add(
                         HealthReading(
                             id = UUID.randomUUID().toString(),
-                            timestamp = sample.time.toEpochMilli(),
+                            timestamp = sampleMillis,
                             heartRate = sample.beatsPerMinute.toInt(),
-                            source = "Health Connect"
+                            source = "Health Connect",
+                            deviceId = deviceId,
+                            importedAt = importedAt,
+                            importedByUser = currentUid
                         )
                     )
                 }
@@ -190,20 +248,25 @@ class HealthDataRepository(private val context: Context) {
 
             if (readings.isEmpty()) {
                 Log.w(tag, "getHeartRateData: No heart rate records found in Health Connect")
-                emit(generateSampleHeartRateData())
+                emit(emptyList())
                 return@flow
             }
 
             Log.d(
                 tag,
-                "getHeartRateData: Successfully retrieved ${readings.size} heart rate readings from Health Connect"
+                "getHeartRateData: Successfully retrieved ${readings.size} heart rate readings from Health Connect for user: $currentUid"
             )
 
-            // Save to Firebase Realtime Database for current user
+            // Save to Firebase Realtime Database with proper suspend context
             if (readings.isNotEmpty()) {
-                val saveResult = vitalsRepository.saveHeartRateData(readings)
+                val saveResult = withContext(Dispatchers.IO) {
+                    vitalsRepository.saveHeartRateData(readings)
+                }
                 if (saveResult.isSuccess) {
-                    Log.d(tag, "getHeartRateData: ✅ Saved to Firebase Realtime Database")
+                    Log.d(
+                        tag,
+                        "getHeartRateData: ✅ Saved ${readings.size} readings to Firebase for uid=$currentUid, device=$deviceId"
+                    )
                 } else {
                     Log.e(
                         tag,
@@ -219,7 +282,7 @@ class HealthDataRepository(private val context: Context) {
             Log.e(
                 tag,
                 "getHeartRateData: Exception type: ${e.javaClass.simpleName}, Message: ${e.message}")
-            emit(generateSampleHeartRateData())
+            emit(emptyList())
         }
     }.flowOn(Dispatchers.IO)
 
@@ -232,8 +295,8 @@ class HealthDataRepository(private val context: Context) {
             Log.d(tag, "getSpO2Data: Starting SpO2 data retrieval")
 
             if (healthConnectClient == null) {
-                Log.w(tag, "getSpO2Data: Health Connect client is null, using sample data")
-                emit(generateSampleSpO2Data())
+                Log.w(tag, "getSpO2Data: Health Connect client is null")
+                emit(emptyList())
                 return@flow
             }
 
@@ -242,13 +305,13 @@ class HealthDataRepository(private val context: Context) {
             Log.d(tag, "getSpO2Data: Permission check result: $hasPermissions")
 
             if (!hasPermissions) {
-                Log.w(tag, "getSpO2Data: Permissions not granted, using sample data")
-                emit(generateSampleSpO2Data())
+                Log.w(tag, "getSpO2Data: Permissions not granted")
+                emit(emptyList())
                 return@flow
             }
 
             val endTime = Instant.now()
-            val startTime = endTime.minusSeconds(24 * 60 * 60) // 24 hours ago
+            val startTime = endTime.minusSeconds(7 * 24 * 60 * 60) // 7 days ago
 
             Log.d(tag, "getSpO2Data: Querying Health Connect from $startTime to $endTime")
 
@@ -259,13 +322,41 @@ class HealthDataRepository(private val context: Context) {
 
             val response = client.readRecords(request)
 
-            if (response.records.isEmpty()) {
-                Log.w(tag, "getSpO2Data: No SpO2 records found in Health Connect")
-                emit(generateSampleSpO2Data())
+            // Check if user is authenticated BEFORE processing data
+            val currentUid = auth.currentUser?.uid
+            if (currentUid == null) {
+                Log.e(
+                    tag,
+                    "getSpO2Data: ⚠️ No authenticated user — skipping Firebase save (prevents data mix-up)"
+                )
+                emit(emptyList())
                 return@flow
             }
 
-            val readings = response.records.mapIndexed { index, record ->
+            val deviceId = getDeviceId()
+            val importedAt = System.currentTimeMillis()
+            val acctCreated = accountCreationMillis()
+
+            if (response.records.isEmpty()) {
+                Log.w(tag, "getSpO2Data: No SpO2 records found in Health Connect")
+                emit(emptyList())
+                return@flow
+            }
+
+            Log.d(tag, "getSpO2Data: Account created at: $acctCreated, filtering pre-account data")
+
+            val readings = response.records.mapIndexedNotNull { index, record ->
+                val recordMillis = record.time.toEpochMilli()
+
+                // ✅ Skip readings that predate account creation
+                if (recordMillis < acctCreated) {
+                    Log.d(
+                        tag,
+                        "Skipping SpO2 record at $recordMillis — predates account creation $acctCreated"
+                    )
+                    return@mapIndexedNotNull null
+                }
+
                 // Health Connect returns percentage as 0.0-1.0 (e.g., 0.98 for 98%)
                 // So we multiply by 100 to get 98
                 // BUT: Some devices (like Galaxy Watch 4) already send it as 98.0
@@ -285,22 +376,29 @@ class HealthDataRepository(private val context: Context) {
 
                 HealthReading(
                     id = UUID.randomUUID().toString(),
-                    timestamp = record.time.toEpochMilli(),
+                    timestamp = recordMillis,
                     oxygenSaturation = spo2Value,
-                    source = "Health Connect"
+                    source = "Health Connect",
+                    deviceId = deviceId,
+                    importedAt = importedAt,
+                    importedByUser = currentUid
                 )
             }
 
             Log.d(
                 tag,
-                "getSpO2Data: Successfully retrieved ${readings.size} SpO2 readings from Health Connect"
+                "getSpO2Data: Successfully retrieved ${readings.size} SpO2 readings from Health Connect for user: $currentUid"
             )
 
-            // Save to Firebase Realtime Database for current user
+            // Save to Firebase Realtime Database with proper suspend context
             if (readings.isNotEmpty()) {
-                val saveResult = vitalsRepository.saveSpO2Data(readings)
+                val saveResult = withContext(Dispatchers.IO) {
+                    vitalsRepository.saveSpO2Data(readings)
+                }
                 if (saveResult.isSuccess) {
-                    Log.d(tag, "getSpO2Data: ✅ Saved to Firebase Realtime Database")
+                    Log.d(
+                        tag,
+                        "getSpO2Data: ✅ Saved ${readings.size} readings to Firebase for uid=$currentUid, device=$deviceId")
                 } else {
                     Log.e(
                         tag,
@@ -316,7 +414,7 @@ class HealthDataRepository(private val context: Context) {
             Log.e(
                 tag,
                 "getSpO2Data: Exception type: ${e.javaClass.simpleName}, Message: ${e.message}")
-            emit(generateSampleSpO2Data())
+            emit(emptyList())
         }
     }.flowOn(Dispatchers.IO)
 
@@ -329,8 +427,8 @@ class HealthDataRepository(private val context: Context) {
             Log.d(tag, "getBloodPressureData: Starting blood pressure data retrieval")
 
             if (healthConnectClient == null) {
-                Log.w(tag, "getBloodPressureData: Health Connect client is null, using sample data")
-                emit(generateSampleBloodPressureData())
+                Log.w(tag, "getBloodPressureData: Health Connect client is null")
+                emit(emptyList())
                 return@flow
             }
 
@@ -339,13 +437,13 @@ class HealthDataRepository(private val context: Context) {
             Log.d(tag, "getBloodPressureData: Permission check result: $hasPermissions")
 
             if (!hasPermissions) {
-                Log.w(tag, "getBloodPressureData: Permissions not granted, using sample data")
-                emit(generateSampleBloodPressureData())
+                Log.w(tag, "getBloodPressureData: Permissions not granted")
+                emit(emptyList())
                 return@flow
             }
 
             val endTime = Instant.now()
-            val startTime = endTime.minusSeconds(30 * 24 * 60 * 60) // 30 days ago for more data
+            val startTime = endTime.minusSeconds(7 * 24 * 60 * 60) // 7 days ago
 
             Log.d(tag, "getBloodPressureData: Querying Health Connect from $startTime to $endTime")
 
@@ -360,26 +458,56 @@ class HealthDataRepository(private val context: Context) {
                 "getBloodPressureData: Received ${response.records.size} records from Health Connect"
             )
 
+            // Check if user is authenticated BEFORE processing data
+            val currentUid = auth.currentUser?.uid
+            if (currentUid == null) {
+                Log.e(
+                    tag,
+                    "getBloodPressureData: ⚠️ No authenticated user — skipping Firebase save (prevents data mix-up)"
+                )
+                emit(emptyList())
+                return@flow
+            }
+
+            val deviceId = getDeviceId()
+            val importedAt = System.currentTimeMillis()
+            val acctCreated = accountCreationMillis()
+
             if (response.records.isEmpty()) {
                 Log.w(
                     tag,
                     "getBloodPressureData: No blood pressure records found in Health Connect"
                 )
-                Log.w(
-                    tag,
-                    "getBloodPressureData: Check if data exists in Health Connect app and try manual sync"
-                )
-                emit(generateSampleBloodPressureData())
+                emit(emptyList())
                 return@flow
             }
 
-            val readings = response.records.mapIndexed { index, record ->
+            Log.d(
+                tag,
+                "getBloodPressureData: Account created at: $acctCreated, filtering pre-account data"
+            )
+
+            val readings = response.records.mapIndexedNotNull { index, record ->
+                val recordMillis = record.time.toEpochMilli()
+
+                // ✅ Skip readings that predate account creation
+                if (recordMillis < acctCreated) {
+                    Log.d(
+                        tag,
+                        "Skipping BP record at $recordMillis — predates account creation $acctCreated"
+                    )
+                    return@mapIndexedNotNull null
+                }
+
                 val reading = HealthReading(
                     id = UUID.randomUUID().toString(),
-                    timestamp = record.time.toEpochMilli(),
+                    timestamp = recordMillis,
                     bloodPressureSystolic = record.systolic.inMillimetersOfMercury.toInt(),
                     bloodPressureDiastolic = record.diastolic.inMillimetersOfMercury.toInt(),
-                    source = "Health Connect"
+                    source = "Health Connect",
+                    deviceId = deviceId,
+                    importedAt = importedAt,
+                    importedByUser = currentUid
                 )
                 Log.d(
                     tag,
@@ -392,14 +520,18 @@ class HealthDataRepository(private val context: Context) {
 
             Log.d(
                 tag,
-                "getBloodPressureData: Successfully retrieved ${readings.size} blood pressure readings from Health Connect"
+                "getBloodPressureData: Successfully retrieved ${readings.size} blood pressure readings from Health Connect for user: $currentUid"
             )
 
-            // Save to Firebase Realtime Database for current user
+            // Save to Firebase Realtime Database with proper suspend context
             if (readings.isNotEmpty()) {
-                val saveResult = vitalsRepository.saveBloodPressureData(readings)
+                val saveResult = withContext(Dispatchers.IO) {
+                    vitalsRepository.saveBloodPressureData(readings)
+                }
                 if (saveResult.isSuccess) {
-                    Log.d(tag, "getBloodPressureData: ✅ Saved to Firebase Realtime Database")
+                    Log.d(
+                        tag,
+                        "getBloodPressureData: ✅ Saved ${readings.size} readings to Firebase for uid=$currentUid, device=$deviceId")
                 } else {
                     Log.e(
                         tag,
@@ -415,21 +547,21 @@ class HealthDataRepository(private val context: Context) {
             Log.e(
                 tag,
                 "getBloodPressureData: Exception type: ${e.javaClass.simpleName}, Message: ${e.message}")
-            emit(generateSampleBloodPressureData())
+            emit(emptyList())
         }
     }.flowOn(Dispatchers.IO)
 
     /**
-     * Get steps data
-     * Privacy: Activity data processed locally only
+     * Get steps data - SIMPLIFIED VERSION - NO FILTERING
+     * Just fetch whatever steps exist in Health Connect
      */
     fun getStepsData(): Flow<List<HealthReading>> = flow {
         try {
-            Log.d(tag, "getStepsData: Starting steps data retrieval")
+            Log.d(tag, "getStepsData: 🚀 Starting SIMPLIFIED steps data retrieval (no filters)")
 
             if (healthConnectClient == null) {
-                Log.w(tag, "getStepsData: Health Connect client is null, using sample data")
-                emit(generateSampleStepsData())
+                Log.w(tag, "getStepsData: Health Connect client is null")
+                emit(emptyList())
                 return@flow
             }
 
@@ -438,13 +570,13 @@ class HealthDataRepository(private val context: Context) {
             Log.d(tag, "getStepsData: Permission check result: $hasPermissions")
 
             if (!hasPermissions) {
-                Log.w(tag, "getStepsData: Permissions not granted, using sample data")
-                emit(generateSampleStepsData())
+                Log.w(tag, "getStepsData: Permissions not granted")
+                emit(emptyList())
                 return@flow
             }
 
             val endTime = Instant.now()
-            val startTime = endTime.minusSeconds(24 * 60 * 60) // 24 hours ago
+            val startTime = endTime.minusSeconds(30 * 24 * 60 * 60) // 30 days ago for more data
 
             Log.d(tag, "getStepsData: Querying Health Connect from $startTime to $endTime")
 
@@ -455,12 +587,20 @@ class HealthDataRepository(private val context: Context) {
 
             val response = client.readRecords(request)
 
-            // Sum up all step records for the day
-            val totalSteps = response.records.sumOf { it.count }
             Log.d(
                 tag,
-                "getStepsData: Found ${response.records.size} step records, total steps: $totalSteps"
+                "getStepsData: 📊 Received ${response.records.size} step records from Health Connect"
             )
+
+            // NO FILTERING - Just get ALL the steps
+            val totalSteps = response.records.sumOf { it.count }
+
+            Log.d(tag, "getStepsData: 🎯 Total steps from ALL records: $totalSteps")
+
+            // Get current user for Firebase save (but don't block if not authenticated)
+            val currentUid = auth.currentUser?.uid
+            val deviceId = getDeviceId()
+            val importedAt = System.currentTimeMillis()
 
             val readings = if (totalSteps > 0) {
                 listOf(
@@ -468,97 +608,49 @@ class HealthDataRepository(private val context: Context) {
                         id = UUID.randomUUID().toString(),
                         timestamp = System.currentTimeMillis(),
                         stepsCount = totalSteps.toInt(),
-                        source = "Health Connect"
+                        source = "Health Connect",
+                        deviceId = deviceId,
+                        importedAt = importedAt,
+                        importedByUser = currentUid
                     )
                 )
             } else {
-                Log.w(tag, "getStepsData: No steps data found in Health Connect")
+                Log.w(tag, "getStepsData: ⚠️ No steps data found in Health Connect")
                 emptyList()
             }
 
-            if (readings.isEmpty()) {
-                emit(generateSampleStepsData())
-            } else {
-                Log.d(tag, "getStepsData: Successfully retrieved steps data from Health Connect")
+            if (readings.isNotEmpty()) {
+                Log.d(
+                    tag,
+                    "getStepsData: ✅ Created reading with ${readings[0].stepsCount} steps"
+                )
 
-                // Save to Firebase Realtime Database for current user
-                val saveResult = vitalsRepository.saveStepsData(readings)
-                if (saveResult.isSuccess) {
-                    Log.d(tag, "getStepsData: ✅ Saved to Firebase Realtime Database")
+                // Save to Firebase (only if user is authenticated)
+                if (currentUid != null) {
+                    val saveResult = withContext(Dispatchers.IO) {
+                        vitalsRepository.saveStepsData(readings)
+                    }
+                    if (saveResult.isSuccess) {
+                        Log.d(tag, "getStepsData: ✅ Saved to Firebase for uid=$currentUid")
+                    } else {
+                        Log.e(
+                            tag,
+                            "getStepsData: ❌ Failed to save to Firebase: ${saveResult.exceptionOrNull()?.message}"
+                        )
+                    }
                 } else {
-                    Log.e(
-                        tag,
-                        "getStepsData: ❌ Failed to save to Firebase: ${saveResult.exceptionOrNull()?.message}"
-                    )
+                    Log.w(tag, "getStepsData: User not authenticated, skipping Firebase save")
                 }
-
-                emit(readings)
             }
 
+            emit(readings)
+
         } catch (e: Exception) {
-            Log.e(tag, "getStepsData: Error reading steps data", e)
-            Log.e(
-                tag,
-                "getStepsData: Exception type: ${e.javaClass.simpleName}, Message: ${e.message}")
-            emit(generateSampleStepsData())
+            Log.e(tag, "getStepsData: ❌ Error reading steps data", e)
+            Log.e(tag, "getStepsData: Exception: ${e.javaClass.simpleName}, Message: ${e.message}")
+            e.printStackTrace()
+            emit(emptyList())
         }
     }.flowOn(Dispatchers.IO)
 
-    // Sample data generators for demo/fallback purposes
-    // Privacy: These are clearly marked as non-real data for demonstration
-    private fun generateSampleHeartRateData(): List<HealthReading> {
-        Log.w(tag, "Generating sample heart rate data - no real data available")
-        val currentTime = System.currentTimeMillis()
-        val readings = (0..23).map { hour ->
-            val hr = Random.nextInt(60, 100)
-            HealthReading(
-                id = UUID.randomUUID().toString(),
-                timestamp = currentTime - (hour * 60 * 60 * 1000),
-                heartRate = hr,
-                source = "Sample Data (No Health Connect Data)"
-            )
-        }
-        val avgHR = readings.mapNotNull { it.heartRate }.average().toInt()
-        Log.w(tag, "Generated ${readings.size} sample HR readings with average: $avgHR bpm")
-        return readings
-    }
-
-    private fun generateSampleSpO2Data(): List<HealthReading> {
-        Log.w(tag, "Generating sample SpO2 data - no real data available")
-        val currentTime = System.currentTimeMillis()
-        return (0..5).map { hour ->
-            HealthReading(
-                id = UUID.randomUUID().toString(),
-                timestamp = currentTime - (hour * 4 * 60 * 60 * 1000),
-                oxygenSaturation = Random.nextInt(95, 100),
-                source = "Sample Data (No Health Connect Data)"
-            )
-        }
-    }
-
-    private fun generateSampleBloodPressureData(): List<HealthReading> {
-        Log.w(tag, "Generating sample blood pressure data - no real data available")
-        val currentTime = System.currentTimeMillis()
-        return (0..2).map { day ->
-            HealthReading(
-                id = UUID.randomUUID().toString(),
-                timestamp = currentTime - (day * 24 * 60 * 60 * 1000),
-                bloodPressureSystolic = Random.nextInt(110, 140),
-                bloodPressureDiastolic = Random.nextInt(70, 90),
-                source = "Sample Data (No Health Connect Data)"
-            )
-        }
-    }
-
-    private fun generateSampleStepsData(): List<HealthReading> {
-        Log.w(tag, "Generating sample steps data - no real data available")
-        return listOf(
-            HealthReading(
-                id = UUID.randomUUID().toString(),
-                timestamp = System.currentTimeMillis(),
-                stepsCount = Random.nextInt(5000, 12000),
-                source = "Sample Data (No Health Connect Data)"
-            )
-        )
-    }
 }

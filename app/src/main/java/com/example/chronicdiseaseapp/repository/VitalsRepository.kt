@@ -55,14 +55,19 @@ class VitalsRepository {
 
             readings.forEach { reading ->
                 if (reading.heartRate != null) {
-                    val data = mapOf(
+                    val data = mutableMapOf(
                         "value" to reading.heartRate,
                         "timestamp" to reading.timestamp,
-                        "source" to reading.source,
+                        "source" to (reading.source ?: "Unknown"),
                         "id" to reading.id
                     )
-                    // Use timestamp as key for easy sorting and querying
-                    heartRateRef.child(reading.timestamp.toString()).setValue(data).await()
+                    // Add device tracking metadata
+                    reading.deviceId?.let { data["deviceId"] = it }
+                    reading.importedAt?.let { data["importedAt"] = it }
+                    reading.importedByUser?.let { data["importedByUser"] = it }
+
+                    // ✅ Use push() to avoid overwrites from identical timestamps
+                    heartRateRef.push().setValue(data).await()
                 }
             }
 
@@ -85,14 +90,20 @@ class VitalsRepository {
 
             readings.forEach { reading ->
                 if (reading.bloodPressureSystolic != null && reading.bloodPressureDiastolic != null) {
-                    val data = mapOf(
+                    val data = mutableMapOf(
                         "systolic" to reading.bloodPressureSystolic,
                         "diastolic" to reading.bloodPressureDiastolic,
                         "timestamp" to reading.timestamp,
-                        "source" to reading.source,
+                        "source" to (reading.source ?: "Unknown"),
                         "id" to reading.id
                     )
-                    bpRef.child(reading.timestamp.toString()).setValue(data).await()
+                    // Add device tracking metadata
+                    reading.deviceId?.let { data["deviceId"] = it }
+                    reading.importedAt?.let { data["importedAt"] = it }
+                    reading.importedByUser?.let { data["importedByUser"] = it }
+
+                    // ✅ Use push() to avoid overwrites from identical timestamps
+                    bpRef.push().setValue(data).await()
                 }
             }
 
@@ -115,13 +126,19 @@ class VitalsRepository {
 
             readings.forEach { reading ->
                 if (reading.oxygenSaturation != null) {
-                    val data = mapOf(
+                    val data = mutableMapOf(
                         "value" to reading.oxygenSaturation,
                         "timestamp" to reading.timestamp,
-                        "source" to reading.source,
+                        "source" to (reading.source ?: "Unknown"),
                         "id" to reading.id
                     )
-                    spO2Ref.child(reading.timestamp.toString()).setValue(data).await()
+                    // Add device tracking metadata
+                    reading.deviceId?.let { data["deviceId"] = it }
+                    reading.importedAt?.let { data["importedAt"] = it }
+                    reading.importedByUser?.let { data["importedByUser"] = it }
+
+                    // ✅ Use push() to avoid overwrites from identical timestamps
+                    spO2Ref.push().setValue(data).await()
                 }
             }
 
@@ -144,13 +161,24 @@ class VitalsRepository {
 
             readings.forEach { reading ->
                 if (reading.stepsCount != null) {
-                    val data = mapOf(
+                    val data = mutableMapOf<String, Any>(
                         "value" to reading.stepsCount,
                         "timestamp" to reading.timestamp,
-                        "source" to reading.source,
+                        "source" to (reading.source ?: "Unknown"),
                         "id" to reading.id
                     )
-                    stepsRef.child(reading.timestamp.toString()).setValue(data).await()
+                    // Add device tracking metadata
+                    reading.deviceId?.let { data["deviceId"] = it }
+                    reading.importedAt?.let { data["importedAt"] = it }
+                    reading.importedByUser?.let { data["importedByUser"] = it }
+
+                    Log.d(
+                        tag,
+                        "Saving steps data: value=${reading.stepsCount}, timestamp=${reading.timestamp}, source=${reading.source}"
+                    )
+
+                    // ✅ Use push() to avoid overwrites from identical timestamps
+                    stepsRef.push().setValue(data).await()
                 }
             }
 
@@ -369,12 +397,27 @@ class VitalsRepository {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val readings = mutableListOf<HealthReading>()
+
+                Log.d(
+                    tag,
+                    "Steps snapshot exists: ${snapshot.exists()}, child count: ${snapshot.childrenCount}"
+                )
+
                 for (child in snapshot.children) {
                     try {
-                        val value = child.child("value").getValue(Int::class.java)
+                        // Log raw data for debugging
+                        Log.d(tag, "Steps child key: ${child.key}, value: ${child.value}")
+
+                        val value = child.child("value").getValue(Long::class.java)?.toInt()
+                            ?: child.child("value").getValue(Int::class.java)
                         val timestamp = child.child("timestamp").getValue(Long::class.java)
                         val source = child.child("source").getValue(String::class.java)
                         val id = child.child("id").getValue(String::class.java)
+
+                        Log.d(
+                            tag,
+                            "Parsed steps - value: $value, timestamp: $timestamp, source: $source"
+                        )
 
                         if (value != null && timestamp != null) {
                             readings.add(
@@ -385,15 +428,24 @@ class VitalsRepository {
                                     source = source ?: "Firebase"
                                 )
                             )
+                        } else {
+                            Log.w(tag, "Skipping steps record - missing value or timestamp")
                         }
                     } catch (e: Exception) {
-                        Log.e(tag, "Error parsing steps data", e)
+                        Log.e(tag, "Error parsing steps data for child ${child.key}", e)
                     }
                 }
-                Log.d(
-                    tag,
-                    "📥 Fetched ${readings.size} steps readings from Firebase for user: $userId"
-                )
+
+                if (readings.isNotEmpty()) {
+                    val totalSteps = readings.sumOf { it.stepsCount ?: 0 }
+                    Log.d(
+                        tag,
+                        "📥 Fetched ${readings.size} steps readings from Firebase for user: $userId, total steps: $totalSteps"
+                    )
+                } else {
+                    Log.w(tag, "📥 No steps readings found in Firebase for user: $userId")
+                }
+
                 trySend(readings)
             }
 

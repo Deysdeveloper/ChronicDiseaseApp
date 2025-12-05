@@ -44,7 +44,26 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
     private val _syncStatus = MutableLiveData<SyncStatus>()
     val syncStatus: LiveData<SyncStatus> = _syncStatus
 
+    private var isInitialized = false
+
+    // DO NOT auto-load in init to prevent race condition with auth
+    // Call startHealthDataSync() explicitly after user signs in
     init {
+        Log.d(tag, "HealthDataViewModel created - waiting for explicit startHealthDataSync() call")
+    }
+
+    /**
+     * Start health data sync - MUST be called AFTER user is authenticated
+     * This prevents device data from being saved to wrong user account
+     */
+    fun startHealthDataSync() {
+        if (isInitialized) {
+            Log.d(tag, "Health data sync already started, skipping")
+            return
+        }
+
+        Log.d(tag, "🟢 startHealthDataSync() called - initializing Health Connect")
+        isInitialized = true
         initializeHealthConnect()
     }
 
@@ -79,13 +98,29 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun loadHealthData() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            _errorMessage.value = null
+    /**
+     * Stop health data sync - call this on sign out to prevent data leaks
+     */
+    fun stopHealthDataSync() {
+        Log.d(tag, "🔴 stopHealthDataSync() called - stopping all health data flows")
+        isInitialized = false
+        // Clear all data
+        _heartRateData.value = emptyList()
+        _spO2Data.value = emptyList()
+        _bloodPressureData.value = emptyList()
+        _stepsData.value = emptyList()
+        _healthMetrics.value = HealthMetrics() // Reset to default empty metrics
+        _syncStatus.value = SyncStatus(isConnected = false)
+    }
 
-            try {
-                // Load heart rate data
+    fun loadHealthData() {
+        _isLoading.value = true
+        _errorMessage.value = null
+
+        try {
+            // Launch each flow collection in a separate coroutine so they run concurrently
+            // Load heart rate data
+            viewModelScope.launch {
                 repository.getHeartRateData()
                     .catch { e ->
                         Log.e(tag, "Error loading heart rate data", e)
@@ -93,11 +128,12 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
                     .collect { readings ->
                         _heartRateData.value = readings
                         Log.d(tag, "Loaded ${readings.size} heart rate readings")
-                        // Update metrics immediately after heart rate data loads
                         updateHealthMetrics()
                     }
+            }
 
-                // Load SpO2 data
+            // Load SpO2 data
+            viewModelScope.launch {
                 repository.getSpO2Data()
                     .catch { e ->
                         Log.e(tag, "Error loading SpO2 data", e)
@@ -105,11 +141,12 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
                     .collect { readings ->
                         _spO2Data.value = readings
                         Log.d(tag, "Loaded ${readings.size} SpO2 readings")
-                        // Update metrics immediately after SpO2 data loads
                         updateHealthMetrics()
                     }
+            }
 
-                // Load blood pressure data
+            // Load blood pressure data
+            viewModelScope.launch {
                 repository.getBloodPressureData()
                     .catch { e ->
                         Log.e(tag, "Error loading blood pressure data", e)
@@ -117,43 +154,56 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
                     .collect { readings ->
                         _bloodPressureData.value = readings
                         Log.d(tag, "Loaded ${readings.size} blood pressure readings")
-                        // Update metrics immediately after blood pressure data loads
                         updateHealthMetrics()
                     }
+            }
 
-                // Load steps data
+            // Load steps data
+            viewModelScope.launch {
                 repository.getStepsData()
                     .catch { e ->
                         Log.e(tag, "Error loading steps data", e)
                     }
                     .collect { readings ->
                         _stepsData.value = readings
-                        Log.d(tag, "Loaded ${readings.size} steps readings")
-                        // Update metrics immediately after steps data loads
+                        if (readings.isNotEmpty()) {
+                            val totalSteps = readings.sumOf { it.stepsCount ?: 0 }
+                            Log.d(
+                                tag,
+                                "Loaded ${readings.size} steps readings, total steps: $totalSteps"
+                            )
+                            readings.forEach { reading ->
+                                Log.d(
+                                    tag,
+                                    "  - Steps reading: ${reading.stepsCount} at ${
+                                        java.util.Date(reading.timestamp)
+                                    }"
+                                )
+                            }
+                        } else {
+                            Log.d(tag, "No steps readings loaded from Health Connect")
+                        }
                         updateHealthMetrics()
                     }
-
-                // Final update of aggregated metrics (ensures all data is included)
-                updateHealthMetrics()
-
-                // Update sync status
-                _syncStatus.value = _syncStatus.value?.copy(
-                    lastSyncTime = System.currentTimeMillis(),
-                    errorMessage = null
-                ) ?: SyncStatus(
-                    isConnected = true,
-                    lastSyncTime = System.currentTimeMillis()
-                )
-
-            } catch (e: Exception) {
-                Log.e(tag, "Error loading health data", e)
-                _errorMessage.value = "Error loading health data: ${e.message}"
-                _syncStatus.value = _syncStatus.value?.copy(
-                    errorMessage = e.message
-                ) ?: SyncStatus(errorMessage = e.message)
-            } finally {
-                _isLoading.value = false
             }
+
+            // Update sync status
+            _syncStatus.value = _syncStatus.value?.copy(
+                lastSyncTime = System.currentTimeMillis(),
+                errorMessage = null
+            ) ?: SyncStatus(
+                isConnected = true,
+                lastSyncTime = System.currentTimeMillis()
+            )
+
+        } catch (e: Exception) {
+            Log.e(tag, "Error loading health data", e)
+            _errorMessage.value = "Error loading health data: ${e.message}"
+            _syncStatus.value = _syncStatus.value?.copy(
+                errorMessage = e.message
+            ) ?: SyncStatus(errorMessage = e.message)
+        } finally {
+            _isLoading.value = false
         }
     }
 
@@ -201,9 +251,12 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
             ?.let { "${it.bloodPressureSystolic}/${it.bloodPressureDiastolic}" }
             ?: "—/—"
 
-        // Calculate total daily steps
+        // Get latest steps count (already aggregated from Health Connect)
+        // We use the most recent reading instead of summing to avoid double-counting
         val dailySteps = stepsReadings
-            .sumOf { it.stepsCount ?: 0 }
+            .maxByOrNull { it.timestamp }?.stepsCount ?: 0
+
+        Log.d(tag, "Steps readings count: ${stepsReadings.size}, latest steps: $dailySteps")
 
         // Find the most recent data timestamp
         val lastSyncTime = maxOf(
@@ -292,14 +345,15 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
      * Useful for viewing historical data or when Health Connect is not available
      */
     fun loadHealthDataFromFirebase() {
-        viewModelScope.launch {
-            _isLoading.value = true
-            _errorMessage.value = null
+        _isLoading.value = true
+        _errorMessage.value = null
 
-            try {
-                Log.d(tag, "Loading health data from Firebase Realtime Database...")
+        try {
+            Log.d(tag, "Loading health data from Firebase Realtime Database...")
 
-                // Load heart rate from Firebase
+            // Launch each flow collection in a separate coroutine so they run concurrently
+            // Load heart rate from Firebase
+            viewModelScope.launch {
                 vitalsRepository.getHeartRateDataFromFirebase()
                     .catch { e ->
                         Log.e(tag, "Error loading heart rate from Firebase", e)
@@ -309,8 +363,10 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
                         Log.d(tag, "Loaded ${readings.size} heart rate readings from Firebase")
                         updateHealthMetrics()
                     }
+            }
 
-                // Load SpO2 from Firebase
+            // Load SpO2 from Firebase
+            viewModelScope.launch {
                 vitalsRepository.getSpO2DataFromFirebase()
                     .catch { e ->
                         Log.e(tag, "Error loading SpO2 from Firebase", e)
@@ -320,8 +376,10 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
                         Log.d(tag, "Loaded ${readings.size} SpO2 readings from Firebase")
                         updateHealthMetrics()
                     }
+            }
 
-                // Load blood pressure from Firebase
+            // Load blood pressure from Firebase
+            viewModelScope.launch {
                 vitalsRepository.getBloodPressureDataFromFirebase()
                     .catch { e ->
                         Log.e(tag, "Error loading blood pressure from Firebase", e)
@@ -331,33 +389,51 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
                         Log.d(tag, "Loaded ${readings.size} blood pressure readings from Firebase")
                         updateHealthMetrics()
                     }
+            }
 
-                // Load steps from Firebase
+            // Load steps from Firebase
+            viewModelScope.launch {
                 vitalsRepository.getStepsDataFromFirebase()
                     .catch { e ->
                         Log.e(tag, "Error loading steps from Firebase", e)
                     }
                     .collect { readings ->
                         _stepsData.value = readings
-                        Log.d(tag, "Loaded ${readings.size} steps readings from Firebase")
+                        if (readings.isNotEmpty()) {
+                            val totalSteps = readings.sumOf { it.stepsCount ?: 0 }
+                            Log.d(
+                                tag,
+                                "Loaded ${readings.size} steps readings from Firebase, total: $totalSteps"
+                            )
+                            readings.forEach { reading ->
+                                Log.d(
+                                    tag,
+                                    "  - Steps from Firebase: ${reading.stepsCount} at ${
+                                        java.util.Date(reading.timestamp)
+                                    }"
+                                )
+                            }
+                        } else {
+                            Log.d(tag, "No steps readings loaded from Firebase")
+                        }
                         updateHealthMetrics()
                     }
-
-                _syncStatus.value = SyncStatus(
-                    isConnected = true,
-                    lastSyncTime = System.currentTimeMillis(),
-                    errorMessage = null
-                )
-
-                Log.d(tag, "✅ Successfully loaded all health data from Firebase")
-
-            } catch (e: Exception) {
-                Log.e(tag, "Error loading health data from Firebase", e)
-                _errorMessage.value = "Error loading from Firebase: ${e.message}"
-                _syncStatus.value = SyncStatus(errorMessage = e.message)
-            } finally {
-                _isLoading.value = false
             }
+
+            _syncStatus.value = SyncStatus(
+                isConnected = true,
+                lastSyncTime = System.currentTimeMillis(),
+                errorMessage = null
+            )
+
+            Log.d(tag, "✅ Successfully initiated all Firebase data streams")
+
+        } catch (e: Exception) {
+            Log.e(tag, "Error loading health data from Firebase", e)
+            _errorMessage.value = "Error loading from Firebase: ${e.message}"
+            _syncStatus.value = SyncStatus(errorMessage = e.message)
+        } finally {
+            _isLoading.value = false
         }
     }
 

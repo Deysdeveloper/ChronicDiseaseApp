@@ -1,0 +1,775 @@
+package com.example.chronicdiseaseapp.viewModel
+
+import android.app.Application
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewModelScope
+import com.example.chronicdiseaseapp.datamodels.*
+import com.example.chronicdiseaseapp.repository.HealthDataRepository
+import com.example.chronicdiseaseapp.repository.VitalsRepository
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.*
+
+class HealthDataViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val repository = HealthDataRepository(application)
+    private val vitalsRepository = VitalsRepository()
+    private val tag = "HealthDataViewModel"
+
+    private val _healthMetrics = MutableLiveData<HealthMetrics>()
+    val healthMetrics: LiveData<HealthMetrics> = _healthMetrics
+
+    private val _heartRateData = MutableLiveData<List<HealthReading>>()
+    val heartRateData: LiveData<List<HealthReading>> = _heartRateData
+
+    private val _spO2Data = MutableLiveData<List<HealthReading>>()
+    val spO2Data: LiveData<List<HealthReading>> = _spO2Data
+
+    private val _bloodPressureData = MutableLiveData<List<HealthReading>>()
+    val bloodPressureData: LiveData<List<HealthReading>> = _bloodPressureData
+
+    private val _stepsData = MutableLiveData<List<HealthReading>>()
+    val stepsData: LiveData<List<HealthReading>> = _stepsData
+
+    private val _isLoading = MutableLiveData<Boolean>()
+    val isLoading: LiveData<Boolean> = _isLoading
+
+    private val _errorMessage = MutableLiveData<String?>()
+    val errorMessage: LiveData<String?> = _errorMessage
+
+    private val _syncStatus = MutableLiveData<SyncStatus>()
+    val syncStatus: LiveData<SyncStatus> = _syncStatus
+
+    init {
+        // DON'T automatically load from Health Connect!
+        // Health Connect is device-level storage and will show data from ALL users
+        // Instead, we ONLY load from Firebase when the user is identified
+        Log.d(
+            tag,
+            "⚠️ HealthDataViewModel initialized - NOT loading from Health Connect automatically"
+        )
+        Log.d(tag, "⚠️ Data will be loaded from Firebase ONLY when user is authenticated")
+
+        // Initialize with empty state - NOT loading
+        _isLoading.value = false
+        _heartRateData.value = emptyList()
+        _spO2Data.value = emptyList()
+        _bloodPressureData.value = emptyList()
+        _stepsData.value = emptyList()
+
+        Log.d(tag, "✅ ViewModel initialized with empty state (not loading)")
+    }
+
+    private fun initializeHealthConnect() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            try {
+                val initialized = repository.initialize()
+                _syncStatus.value = SyncStatus(
+                    isConnected = initialized,
+                    lastSyncTime = System.currentTimeMillis(),
+                    errorMessage = if (!initialized) "Health Connect not available" else null
+                )
+
+                if (initialized) {
+                    Log.d(tag, "Health Connect initialized successfully")
+                    // DO NOT auto-load: loadHealthData()
+                    Log.d(tag, "Health Connect ready but NOT loading data automatically")
+                } else {
+                    Log.w(tag, "Health Connect not available")
+                    // DO NOT auto-load: loadHealthData()
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Error initializing Health Connect", e)
+                _errorMessage.value = "Error connecting to Health Connect: ${e.message}"
+                _syncStatus.value = SyncStatus(
+                    isConnected = false,
+                    errorMessage = e.message
+                )
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    fun loadHealthData() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+
+            try {
+                // Load heart rate data
+                repository.getHeartRateData()
+                    .catch { e ->
+                        Log.e(tag, "Error loading heart rate data", e)
+                    }
+                    .collect { readings ->
+                        _heartRateData.value = readings
+                        Log.d(tag, "Loaded ${readings.size} heart rate readings")
+                        // Update metrics immediately after heart rate data loads
+                        updateHealthMetrics()
+                    }
+
+                // Load SpO2 data
+                repository.getSpO2Data()
+                    .catch { e ->
+                        Log.e(tag, "Error loading SpO2 data", e)
+                    }
+                    .collect { readings ->
+                        _spO2Data.value = readings
+                        Log.d(tag, "Loaded ${readings.size} SpO2 readings")
+                        // Update metrics immediately after SpO2 data loads
+                        updateHealthMetrics()
+                    }
+
+                // Load blood pressure data
+                repository.getBloodPressureData()
+                    .catch { e ->
+                        Log.e(tag, "Error loading blood pressure data", e)
+                    }
+                    .collect { readings ->
+                        _bloodPressureData.value = readings
+                        Log.d(tag, "Loaded ${readings.size} blood pressure readings")
+                        // Update metrics immediately after blood pressure data loads
+                        updateHealthMetrics()
+                    }
+
+                // Load steps data
+                repository.getStepsData()
+                    .catch { e ->
+                        Log.e(tag, "Error loading steps data", e)
+                    }
+                    .collect { readings ->
+                        _stepsData.value = readings
+                        Log.d(tag, "Loaded ${readings.size} steps readings")
+                        // Update metrics immediately after steps data loads
+                        updateHealthMetrics()
+                    }
+
+                // Final update of aggregated metrics (ensures all data is included)
+                updateHealthMetrics()
+
+                // Update sync status
+                _syncStatus.value = _syncStatus.value?.copy(
+                    lastSyncTime = System.currentTimeMillis(),
+                    errorMessage = null
+                ) ?: SyncStatus(
+                    isConnected = true,
+                    lastSyncTime = System.currentTimeMillis()
+                )
+
+            } catch (e: Exception) {
+                Log.e(tag, "Error loading health data", e)
+                _errorMessage.value = "Error loading health data: ${e.message}"
+                _syncStatus.value = _syncStatus.value?.copy(
+                    errorMessage = e.message
+                ) ?: SyncStatus(errorMessage = e.message)
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    private fun updateHealthMetrics() {
+        val heartRateReadings = _heartRateData.value ?: emptyList()
+        val spO2Readings = _spO2Data.value ?: emptyList()
+        val bloodPressureReadings = _bloodPressureData.value ?: emptyList()
+        val stepsReadings = _stepsData.value ?: emptyList()
+
+        Log.d(tag, "=== updateHealthMetrics called ===")
+        Log.d(tag, "Heart rate readings count: ${heartRateReadings.size}")
+
+        // Log first few heart rate values for debugging
+        if (heartRateReadings.isNotEmpty()) {
+            val hrValues = heartRateReadings.take(5).mapNotNull { it.heartRate }
+            Log.d(tag, "First 5 HR values: $hrValues")
+        }
+
+        // Get LATEST heart rate reading (real-time update like SpO2)
+        val latestHeartRate = heartRateReadings
+            .sortedByDescending { it.timestamp }
+            .firstOrNull()?.heartRate ?: 0
+
+        Log.d(tag, "Latest HR value (most recent): $latestHeartRate bpm")
+
+        // Also calculate average for reference
+        val heartRateValues = heartRateReadings.mapNotNull { it.heartRate }
+        if (heartRateValues.isNotEmpty()) {
+            val average = heartRateValues.average()
+            Log.d(
+                tag,
+                "HR average: ${average.toInt()} bpm (from ${heartRateValues.size} readings)"
+            )
+        }
+
+        // Get latest SpO2 reading
+        val latestSpO2 = spO2Readings
+            .sortedByDescending { it.timestamp }
+            .firstOrNull()?.oxygenSaturation ?: 0
+
+        // Get latest blood pressure reading
+        val latestBP = bloodPressureReadings
+            .sortedByDescending { it.timestamp }
+            .firstOrNull()
+            ?.let { "${it.bloodPressureSystolic}/${it.bloodPressureDiastolic}" }
+            ?: "—/—"
+
+        // Calculate total daily steps
+        val dailySteps = stepsReadings
+            .sumOf { it.stepsCount ?: 0 }
+
+        // Find the most recent data timestamp
+        val lastSyncTime = maxOf(
+            heartRateReadings.maxOfOrNull { it.timestamp } ?: 0,
+            spO2Readings.maxOfOrNull { it.timestamp } ?: 0,
+            bloodPressureReadings.maxOfOrNull { it.timestamp } ?: 0,
+            stepsReadings.maxOfOrNull { it.timestamp } ?: 0
+        )
+
+        // Calculate trend (simplified - you can make this more sophisticated)
+        val trend = calculateHealthTrend(heartRateReadings)
+
+        _healthMetrics.value = HealthMetrics(
+            averageHeartRate = latestHeartRate,
+            latestBloodPressure = latestBP,
+            latestSpO2 = latestSpO2,
+            dailySteps = dailySteps,
+            weeklyTrend = trend,
+            lastSyncTime = lastSyncTime,
+            isDataAvailable = heartRateReadings.isNotEmpty() ||
+                    spO2Readings.isNotEmpty() ||
+                    bloodPressureReadings.isNotEmpty() ||
+                    stepsReadings.isNotEmpty()
+        )
+
+        Log.d(
+            tag,
+            "✅ Updated health metrics: HR=$latestHeartRate bpm (latest), BP=$latestBP, SpO2=$latestSpO2, Steps=$dailySteps"
+        )
+        Log.d(tag, "=================================")
+    }
+
+    private fun calculateHealthTrend(readings: List<HealthReading>): HealthTrend {
+        if (readings.size < 2) return HealthTrend.STABLE
+
+        val sortedReadings = readings.sortedBy { it.timestamp }
+        val recentAvg = sortedReadings.takeLast(3).mapNotNull { it.heartRate }.average()
+        val olderAvg = sortedReadings.take(3).mapNotNull { it.heartRate }.average()
+
+        return when {
+            recentAvg > olderAvg + 5 -> HealthTrend.DECLINING // Higher heart rate might indicate stress
+            recentAvg < olderAvg - 5 -> HealthTrend.IMPROVING // Lower resting heart rate is generally better
+            else -> HealthTrend.STABLE
+        }
+    }
+
+    /**
+     * Refresh data: Sync from Health Connect to Firebase, then load from Firebase
+     * This ensures we get the latest data from the watch and display user-specific data
+     */
+    fun refreshData() {
+        Log.d(tag, "🔄 ========================================")
+        Log.d(tag, "🔄 MANUAL REFRESH REQUESTED")
+        Log.d(tag, "🔄 ========================================")
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+
+            try {
+                val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                if (userId == null) {
+                    Log.w(tag, "Cannot refresh - no user logged in")
+                    _errorMessage.value = "Please log in to refresh data"
+                    _isLoading.value = false
+                    return@launch
+                }
+
+                Log.d(tag, "🔄 Current user: $userId")
+
+                // Initialize Health Connect first
+                val healthConnectAvailable = repository.initialize()
+                Log.d(tag, "🔄 Health Connect available: $healthConnectAvailable")
+
+                if (!healthConnectAvailable) {
+                    Log.w(tag, "⚠️ Health Connect not available - loading from Firebase only")
+                    loadHealthDataFromFirebase()
+                    return@launch
+                }
+
+                // Check permissions
+                val hasPermissions = repository.checkPermissions()
+                Log.d(tag, "🔄 Has Health Connect permissions: $hasPermissions")
+
+                if (!hasPermissions) {
+                    Log.w(tag, "⚠️ No Health Connect permissions - loading from Firebase only")
+                    _errorMessage.value = "Grant Health Connect permissions to sync from your watch"
+                    loadHealthDataFromFirebase()
+                    return@launch
+                }
+
+                // ========================================
+                // 🚨 CRITICAL SECURITY CHECK FOR USER DATA ISOLATION
+                // ========================================
+                // Health Connect is device-level storage containing ALL users' data
+                // We MUST prevent new users from syncing old users' data!
+                val hasSyncedBefore = vitalsRepository.hasUserEverSyncedVitals(userId)
+                
+                if (!hasSyncedBefore) {
+                    Log.w(tag, "🚨 ========================================")
+                    Log.w(tag, "🚨 BLOCKING SYNC FOR NEW USER")
+                    Log.w(tag, "🚨 User: $userId (brand new, never synced)")
+                    Log.w(tag, "🚨 ========================================")
+                    Log.w(tag, "⚠️ Health Connect contains data from ALL device users")
+                    Log.w(tag, "⚠️ Cannot sync until user confirms their watch is paired")
+                    Log.w(tag, "🚨 ========================================")
+                    
+                    _errorMessage.value = "⚠️ First time setup: Please ensure YOUR Galaxy Watch 4 is paired to YOUR Samsung Health account. Once paired and vitals are taken, click refresh again."
+                    
+                    // Load from Firebase (will be empty for new user, which is correct)
+                    loadHealthDataFromFirebase()
+                    return@launch
+                }
+                
+                Log.d(tag, "✅ User has synced before - safe to read from Health Connect")
+
+                // Step 1: Read from Health Connect (device storage with watch data)
+                Log.d(tag, "📱 ========================================")
+                Log.d(tag, "📱 STEP 1: Reading from Health Connect")
+                Log.d(tag, "📱 ========================================")
+
+                Log.d(tag, "📱 Fetching heart rate data...")
+                val heartRateReadings = repository.getHeartRateData().first()
+                Log.d(tag, "📱 ✅ Read ${heartRateReadings.size} HR readings from Health Connect")
+                if (heartRateReadings.isNotEmpty()) {
+                    val latest = heartRateReadings.maxByOrNull { it.timestamp }
+                    Log.d(
+                        tag,
+                        "📱   Latest HR: ${latest?.heartRate} bpm at ${
+                            latest?.timestamp?.let {
+                                java.util.Date(it)
+                            }
+                        }"
+                    )
+                    Log.d(tag, "📱   Source: ${latest?.source}")
+                }
+
+                Log.d(tag, "📱 Fetching SpO2 data...")
+                val spO2Readings = repository.getSpO2Data().first()
+                Log.d(tag, "📱 ✅ Read ${spO2Readings.size} SpO2 readings from Health Connect")
+                if (spO2Readings.isNotEmpty()) {
+                    val latest = spO2Readings.maxByOrNull { it.timestamp }
+                    Log.d(
+                        tag,
+                        "📱   Latest SpO2: ${latest?.oxygenSaturation}% at ${
+                            latest?.timestamp?.let {
+                                java.util.Date(it)
+                            }
+                        }"
+                    )
+                }
+
+                Log.d(tag, "📱 Fetching blood pressure data...")
+                val bloodPressureReadings = repository.getBloodPressureData().first()
+                Log.d(tag, "📱 ✅ Read ${bloodPressureReadings.size} BP readings from Health Connect")
+                if (bloodPressureReadings.isNotEmpty()) {
+                    val latest = bloodPressureReadings.maxByOrNull { it.timestamp }
+                    Log.d(
+                        tag,
+                        "📱   Latest BP: ${latest?.bloodPressureSystolic}/${latest?.bloodPressureDiastolic} mmHg at ${
+                            latest?.timestamp?.let {
+                                java.util.Date(it)
+                            }
+                        }"
+                    )
+                }
+
+                Log.d(tag, "📱 Fetching steps data...")
+                val stepsReadings = repository.getStepsData().first()
+                Log.d(tag, "📱 ✅ Read ${stepsReadings.size} steps readings from Health Connect")
+                if (stepsReadings.isNotEmpty()) {
+                    Log.d(tag, "📱   Total steps: ${stepsReadings.firstOrNull()?.stepsCount}")
+                }
+
+                // Check if we got any real data (not sample data)
+                val hasRealData =
+                    listOf(heartRateReadings, spO2Readings, bloodPressureReadings, stepsReadings)
+                        .flatten()
+                        .any { !it.source.contains("Sample Data") }
+
+                if (!hasRealData) {
+                    Log.w(tag, "⚠️ ========================================")
+                    Log.w(tag, "⚠️ NO REAL DATA FROM HEALTH CONNECT")
+                    Log.w(tag, "⚠️ All readings are sample data")
+                    Log.w(tag, "⚠️ ========================================")
+                    Log.w(tag, "⚠️ Possible issues:")
+                    Log.w(tag, "⚠️ 1. Samsung Health not syncing to Health Connect")
+                    Log.w(tag, "⚠️ 2. No recent vitals on Galaxy Watch 4")
+                    Log.w(tag, "⚠️ 3. Health Connect permissions need to be refreshed")
+                    Log.w(tag, "⚠️ ========================================")
+                    _errorMessage.value = "No new data from watch. Check Samsung Health sync."
+                    loadHealthDataFromFirebase()
+                    return@launch
+                }
+
+                // Step 2: Save to Firebase in parallel (FASTER - all at once)
+                Log.d(tag, "☁️ ========================================")
+                Log.d(tag, "☁️ STEP 2: Saving to Firebase (PARALLEL)")
+                Log.d(tag, "☁️ User: $userId")
+                Log.d(tag, "☁️ ========================================")
+
+                // Save all data types in parallel using async (much faster!)
+                val saveJobs = mutableListOf<kotlinx.coroutines.Deferred<Unit>>()
+
+                if (heartRateReadings.isNotEmpty() && !heartRateReadings.first().source.contains("Sample")) {
+                    saveJobs.add(async(Dispatchers.IO) {
+                        vitalsRepository.saveHeartRateData(heartRateReadings)
+                        Log.d(tag, "☁️ ✅ Saved ${heartRateReadings.size} HR readings to Firebase")
+                        Unit
+                    })
+                }
+
+                if (spO2Readings.isNotEmpty() && !spO2Readings.first().source.contains("Sample")) {
+                    saveJobs.add(async(Dispatchers.IO) {
+                        vitalsRepository.saveSpO2Data(spO2Readings)
+                        Log.d(tag, "☁️ ✅ Saved ${spO2Readings.size} SpO2 readings to Firebase")
+                        Unit
+                    })
+                }
+
+                if (bloodPressureReadings.isNotEmpty() && !bloodPressureReadings.first().source.contains(
+                        "Sample"
+                    )
+                ) {
+                    saveJobs.add(async(Dispatchers.IO) {
+                        vitalsRepository.saveBloodPressureData(bloodPressureReadings)
+                        Log.d(
+                            tag,
+                            "☁️ ✅ Saved ${bloodPressureReadings.size} BP readings to Firebase"
+                        )
+                        Unit
+                    })
+                }
+
+                if (stepsReadings.isNotEmpty() && !stepsReadings.first().source.contains("Sample")) {
+                    saveJobs.add(async(Dispatchers.IO) {
+                        vitalsRepository.saveStepsData(stepsReadings)
+                        Log.d(tag, "☁️ ✅ Saved ${stepsReadings.size} steps readings to Firebase")
+                        Unit
+                    })
+                }
+
+                // Wait for all saves to complete in parallel
+                saveJobs.forEach { it.await() }
+                val savedCount = saveJobs.size
+
+                Log.d(tag, "☁️ Total datasets saved: $savedCount (in parallel)")
+
+                // Step 3: Display data immediately (no need to reload from Firebase)
+                Log.d(tag, "📥 ========================================")
+                Log.d(tag, "📥 STEP 3: Displaying data (FAST - no Firebase reload)")
+                Log.d(tag, "📥 ========================================")
+
+                // Update LiveData with the fresh data from Health Connect
+                _heartRateData.value = heartRateReadings
+                _spO2Data.value = spO2Readings
+                _bloodPressureData.value = bloodPressureReadings
+                _stepsData.value = stepsReadings
+
+                // Update metrics
+                updateHealthMetrics()
+
+                // Update sync status
+                _syncStatus.value = SyncStatus(
+                    isConnected = true,
+                    lastSyncTime = System.currentTimeMillis(),
+                    errorMessage = null
+                )
+
+                _isLoading.value = false
+
+                Log.d(tag, "✅ ========================================")
+                Log.d(tag, "✅ REFRESH COMPLETE (FAST MODE)")
+                Log.d(tag, "✅ Synced $savedCount datasets")
+                Log.d(tag, "✅ Data displayed instantly without Firebase reload")
+                Log.d(tag, "✅ ========================================")
+
+            } catch (e: Exception) {
+                Log.e(tag, "❌ ========================================")
+                Log.e(tag, "❌ ERROR DURING REFRESH", e)
+                Log.e(tag, "❌ Exception: ${e.javaClass.simpleName}")
+                Log.e(tag, "❌ Message: ${e.message}")
+                Log.e(tag, "❌ ========================================")
+                _errorMessage.value = "Error refreshing data: ${e.message}"
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Debug function to check permissions and sync status
+     * Useful for troubleshooting connection issues
+     */
+    fun debugRefreshPermissions() {
+        Log.d(tag, "🔧 Debug: Manual permission check and sync")
+        viewModelScope.launch {
+            try {
+                val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                Log.d(tag, "🔧 Debug: Current user ID: $userId")
+
+                val healthConnectAvailable = repository.initialize()
+                Log.d(tag, "🔧 Debug: Health Connect available: $healthConnectAvailable")
+
+                val hasPermissions = repository.checkPermissions()
+                Log.d(tag, "🔧 Debug: Has Health Connect permissions: $hasPermissions")
+
+                // Check Firebase sync status
+                if (userId != null) {
+                    val hasSynced = vitalsRepository.hasUserEverSyncedVitals(userId)
+                    Log.d(tag, "🔧 Debug: User has synced vitals before: $hasSynced")
+                }
+
+                // Instead of loading sample data, do a proper refresh
+                Log.d(tag, "🔧 Debug: Triggering proper sync...")
+                refreshData()
+            } catch (e: Exception) {
+                Log.e(tag, "🔧 Debug: Error during permission check", e)
+                _errorMessage.value = "Debug error: ${e.message}"
+            }
+        }
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
+    }
+
+    fun getSyncTimeDisplay(): String {
+        val syncTime = _syncStatus.value?.lastSyncTime ?: return "Never"
+        val formatter = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
+        return formatter.format(Date(syncTime))
+    }
+
+    /**
+     * Check if user has ever synced vitals before
+     * For new users, this will be false until they sync from their watch
+     */
+    suspend fun hasUserEverSyncedVitals(): Boolean {
+        val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+        return if (userId != null) {
+            vitalsRepository.hasUserEverSyncedVitals(userId)
+        } else {
+            false
+        }
+    }
+
+    /**
+     * Load health data from Firebase Realtime Database (instead of Health Connect)
+     * Useful for viewing historical data or when Health Connect is not available
+     * ONLY loads data if user has ever synced vitals (prevents loading for brand new users)
+     *
+     * FIXED: Uses .first() instead of .collect{} to get one-time snapshot and complete
+     */
+    fun loadHealthDataFromFirebase() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+
+            try {
+                val userId = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                if (userId == null) {
+                    Log.w(tag, "Cannot load Firebase data - no user logged in")
+                    _isLoading.value = false
+                    return@launch
+                }
+
+                // Check if user has ever synced vitals
+                val hasSynced = vitalsRepository.hasUserEverSyncedVitals(userId)
+                Log.d(tag, "🔍 User $userId hasEverSyncedVitals: $hasSynced")
+
+                if (!hasSynced) {
+                    Log.d(tag, "⚠️ NEW USER - Not loading from Firebase (no vitals synced yet)")
+                    Log.d(tag, "⚠️ Data will be loaded only when user syncs from watch")
+                    _isLoading.value = false
+
+                    // Set empty state - no data available for brand new user
+                    _heartRateData.value = emptyList()
+                    _spO2Data.value = emptyList()
+                    _bloodPressureData.value = emptyList()
+                    _stepsData.value = emptyList()
+
+                    // Update metrics to show no data available
+                    updateHealthMetrics()
+
+                    return@launch
+                }
+
+                Log.d(tag, "📥 Loading health data from Firebase Realtime Database...")
+
+                // Load all data in parallel using async for better performance
+                // Use .first() to get ONE snapshot and complete (not continuous listening)
+                val heartRateJob = async {
+                    try {
+                        val readings = vitalsRepository.getHeartRateDataFromFirebase()
+                            .catch { e -> Log.e(tag, "Error loading heart rate from Firebase", e) }
+                            .first() // ← KEY FIX: Get first emission and complete
+                        _heartRateData.value = readings
+                        Log.d(tag, "✅ Loaded ${readings.size} heart rate readings from Firebase")
+                    } catch (e: Exception) {
+                        Log.e(tag, "Error loading heart rate", e)
+                        _heartRateData.value = emptyList()
+                    }
+                }
+
+                val spO2Job = async {
+                    try {
+                        val readings = vitalsRepository.getSpO2DataFromFirebase()
+                            .catch { e -> Log.e(tag, "Error loading SpO2 from Firebase", e) }
+                            .first() // ← KEY FIX: Get first emission and complete
+                        _spO2Data.value = readings
+                        Log.d(tag, "✅ Loaded ${readings.size} SpO2 readings from Firebase")
+                    } catch (e: Exception) {
+                        Log.e(tag, "Error loading SpO2", e)
+                        _spO2Data.value = emptyList()
+                    }
+                }
+
+                val bloodPressureJob = async {
+                    try {
+                        val readings = vitalsRepository.getBloodPressureDataFromFirebase()
+                            .catch { e ->
+                                Log.e(
+                                    tag,
+                                    "Error loading blood pressure from Firebase",
+                                    e
+                                )
+                            }
+                            .first() // ← KEY FIX: Get first emission and complete
+                        _bloodPressureData.value = readings
+                        Log.d(
+                            tag,
+                            "✅ Loaded ${readings.size} blood pressure readings from Firebase"
+                        )
+                    } catch (e: Exception) {
+                        Log.e(tag, "Error loading blood pressure", e)
+                        _bloodPressureData.value = emptyList()
+                    }
+                }
+
+                val stepsJob = async {
+                    try {
+                        val readings = vitalsRepository.getStepsDataFromFirebase()
+                            .catch { e -> Log.e(tag, "Error loading steps from Firebase", e) }
+                            .first() // ← KEY FIX: Get first emission and complete
+                        _stepsData.value = readings
+                        Log.d(tag, "✅ Loaded ${readings.size} steps readings from Firebase")
+                    } catch (e: Exception) {
+                        Log.e(tag, "Error loading steps", e)
+                        _stepsData.value = emptyList()
+                    }
+                }
+
+                // Wait for all jobs to complete
+                heartRateJob.await()
+                spO2Job.await()
+                bloodPressureJob.await()
+                stepsJob.await()
+
+                // Update metrics with all loaded data
+                updateHealthMetrics()
+
+                _syncStatus.value = SyncStatus(
+                    isConnected = true,
+                    lastSyncTime = System.currentTimeMillis(),
+                    errorMessage = null
+                )
+
+                Log.d(tag, "✅ Successfully loaded all health data from Firebase")
+
+            } catch (e: Exception) {
+                Log.e(tag, "❌ Error loading health data from Firebase", e)
+                _errorMessage.value = "Error loading from Firebase: ${e.message}"
+                _syncStatus.value = SyncStatus(errorMessage = e.message)
+            } finally {
+                _isLoading.value = false // ← NOW THIS WILL ACTUALLY EXECUTE!
+                Log.d(tag, "✅ Loading complete, isLoading set to false")
+            }
+        }
+    }
+
+    /**
+     * Get vitals summary from Firebase
+     */
+    fun getVitalsSummary(onResult: (Map<String, Any?>) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val summary = vitalsRepository.getVitalsSummary()
+                Log.d(tag, "Vitals summary: $summary")
+                onResult(summary)
+            } catch (e: Exception) {
+                Log.e(tag, "Error getting vitals summary", e)
+                onResult(emptyMap())
+            }
+        }
+    }
+
+    /**
+     * Clean up old vitals data from Firebase (keep last 30 days)
+     */
+    fun cleanupOldVitals(daysToKeep: Int = 30) {
+        viewModelScope.launch {
+            try {
+                val result = vitalsRepository.cleanupOldData(daysToKeep)
+                if (result.isSuccess) {
+                    Log.d(tag, "✅ Successfully cleaned up old vitals data")
+                } else {
+                    Log.e(
+                        tag,
+                        "❌ Failed to clean up old data: ${result.exceptionOrNull()?.message}"
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Error cleaning up old vitals", e)
+            }
+        }
+    }
+
+    /**
+     * Clear all health data (useful when switching users)
+     */
+    fun clearAllData() {
+        Log.d(tag, "🧹 ========================================")
+        Log.d(tag, "🧹 CLEARING ALL HEALTH DATA FOR USER SWITCH")
+        Log.d(tag, "🧹 ========================================")
+        Log.d(tag, "🧹 Before clear - Heart Rate Data: ${_heartRateData.value?.size ?: 0} readings")
+        Log.d(tag, "🧹 Before clear - BP Data: ${_bloodPressureData.value?.size ?: 0} readings")
+        Log.d(tag, "🧹 Before clear - SpO2 Data: ${_spO2Data.value?.size ?: 0} readings")
+        Log.d(tag, "🧹 Before clear - Steps Data: ${_stepsData.value?.size ?: 0} readings")
+
+        // Reset all data to empty state
+        _heartRateData.value = emptyList()
+        _spO2Data.value = emptyList()
+        _bloodPressureData.value = emptyList()
+        _stepsData.value = emptyList()
+        _isLoading.value = false
+        _errorMessage.value = null
+
+        // Reset metrics to default empty state
+        _healthMetrics.value = HealthMetrics(isDataAvailable = false)
+        _syncStatus.value = SyncStatus()
+
+        Log.d(tag, "🧹 After clear - All LiveData set to empty state")
+        Log.d(tag, "🧹 ========================================")
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        Log.d(tag, "ViewModel cleared")
+    }
+}

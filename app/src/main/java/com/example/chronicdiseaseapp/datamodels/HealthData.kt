@@ -17,7 +17,11 @@ data class HealthReading(
     val sleepDuration: Long? = null, // in minutes
     val stressLevel: Int? = null, // 0-100
     val bodyTemperature: Double? = null,
-    val syncedAt: Long = System.currentTimeMillis()
+    val syncedAt: Long = System.currentTimeMillis(),
+    // NEW: Track device and import metadata to prevent cross-user data contamination
+    val deviceId: String? = null,
+    val importedAt: Long? = null,
+    val importedByUser: String? = null  // UID of user who imported this device data
 ) {
     val bloodPressureReading: String
         get() = if (bloodPressureSystolic != null && bloodPressureDiastolic != null) {

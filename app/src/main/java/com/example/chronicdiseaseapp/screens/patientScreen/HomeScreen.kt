@@ -102,6 +102,14 @@ fun HomeScreen(
             // Always load the user profile when component mounts or user changes
             Log.d("HomeScreen", "Loading profile for user: $uid")
             authViewModel.loadCurrentUserProfile()
+
+            // ✅ START HEALTH DATA SYNC ONLY AFTER USER IS AUTHENTICATED
+            Log.d("HomeScreen", "🟢 User authenticated: $uid - starting health data sync")
+            healthDataViewModel.startHealthDataSync()
+        } ?: run {
+            // User signed out - stop health data sync
+            Log.d("HomeScreen", "🔴 No user - stopping health data sync")
+            healthDataViewModel.stopHealthDataSync()
         }
 
         // Check if privacy notice has been acknowledged
