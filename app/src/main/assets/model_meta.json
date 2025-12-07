@@ -7,7 +7,7 @@
   "k_votes": 1,
   "delta": 3.0,
   "abs_critical_low_spo2": 90.0,
-  "abs_critical_high_systolic": 180.0,
+  "abs_critical_high_systolic": 130.0,
   "abs_critical_low_systolic": 90.0,
   "abs_critical_high_diastolic": 85.0,
   "abs_critical_low_diastolic": 40.0,

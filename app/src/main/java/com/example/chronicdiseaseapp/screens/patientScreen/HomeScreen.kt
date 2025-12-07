@@ -67,6 +67,7 @@ fun HomeScreen(
     // Samsung Health data from Galaxy Watch 4
     val healthMetrics by healthDataViewModel.healthMetrics.observeAsState()
     val isHealthDataLoading by healthDataViewModel.isLoading.observeAsState(false)
+    val isRefreshing by healthDataViewModel.isRefreshing.observeAsState(false)
     val healthError by healthDataViewModel.errorMessage.observeAsState()
     val syncStatus by healthDataViewModel.syncStatus.observeAsState()
 
@@ -326,13 +327,21 @@ fun HomeScreen(
                                 healthDataViewModel.refreshData()
                                 healthDataViewModel.clearError()
                             },
-                            enabled = !isHealthDataLoading
+                            enabled = !isRefreshing
                         ) {
-                            Icon(
-                                Icons.Default.Refresh,
-                                contentDescription = "Refresh health data",
-                                tint = if (isHealthDataLoading) Color.Gray else Color(0xFF666666)
-                            )
+                            if (isRefreshing) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color(0xFF64A9FF)
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Refresh health data",
+                                    tint = Color(0xFF666666)
+                                )
+                            }
                         }
 
                         // Debug button for troubleshooting
@@ -503,7 +512,7 @@ fun HomeScreen(
                                     title = "Heart Rate",
                                     value = healthMetrics?.getDisplayText("heartRate") ?: "—",
                                     unit = "bpm",
-                                    isLoading = isHealthDataLoading,
+                                    isLoading = isHealthDataLoading || isRefreshing,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
@@ -511,7 +520,7 @@ fun HomeScreen(
                                     title = "Blood Pressure",
                                     value = healthMetrics?.getDisplayText("bloodPressure") ?: "—/—",
                                     unit = "mmHg",
-                                    isLoading = isHealthDataLoading,
+                                    isLoading = isHealthDataLoading || isRefreshing,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -521,7 +530,7 @@ fun HomeScreen(
                                     title = "SpO2",
                                     value = healthMetrics?.getDisplayText("spO2") ?: "—",
                                     unit = "%",
-                                    isLoading = isHealthDataLoading,
+                                    isLoading = isHealthDataLoading || isRefreshing,
                                     modifier = Modifier.weight(1f)
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
@@ -529,7 +538,7 @@ fun HomeScreen(
                                     title = "Steps",
                                     value = healthMetrics?.getDisplayText("steps") ?: "—",
                                     unit = "steps",
-                                    isLoading = isHealthDataLoading,
+                                    isLoading = isHealthDataLoading || isRefreshing,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -654,7 +663,9 @@ private fun DashboardCard(
         modifier = modifier
             .fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isLoading) Color(0xFFF8F9FA) else Color.White
+        ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -667,14 +678,22 @@ private fun DashboardCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             if (isLoading) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.5.dp,
                         color = Color(0xFF64A9FF)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Loading...", color = Color(0xFFAAAAAA), fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Refreshing...",
+                        color = Color(0xFF64A9FF),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             } else {
                 Row(verticalAlignment = Alignment.Bottom) {

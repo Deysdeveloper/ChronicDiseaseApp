@@ -38,6 +38,9 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
     private val _isLoading = MutableLiveData<Boolean>()
     val isLoading: LiveData<Boolean> = _isLoading
 
+    private val _isRefreshing = MutableLiveData<Boolean>()
+    val isRefreshing: LiveData<Boolean> = _isRefreshing
+
     private val _errorMessage = MutableLiveData<String?>()
     val errorMessage: LiveData<String?> = _errorMessage
 
@@ -305,10 +308,14 @@ class HealthDataViewModel(application: Application) : AndroidViewModel(applicati
 
     fun refreshData() {
         Log.d(tag, "Manual refresh requested - checking permissions")
+        _isRefreshing.value = true
         viewModelScope.launch {
             val hasPermissions = repository.checkPermissions()
             Log.d(tag, "Permissions check result: $hasPermissions")
             loadHealthData()
+            // Add a small delay to ensure the loading state is visible
+            kotlinx.coroutines.delay(500)
+            _isRefreshing.value = false
         }
     }
 
