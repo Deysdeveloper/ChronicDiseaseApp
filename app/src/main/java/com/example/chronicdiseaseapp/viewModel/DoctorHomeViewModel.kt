@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import com.example.chronicdiseaseapp.datamodels.*
+import com.example.chronicdiseaseapp.repository.DoctorConnectionRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
@@ -19,6 +20,7 @@ class DoctorHomeViewModel : ViewModel() {
 
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
+    private val connectionRepository = DoctorConnectionRepository()
 
     // Doctor profile
     private val _doctorProfile = MutableStateFlow<UserProfile?>(null)
@@ -44,6 +46,10 @@ class DoctorHomeViewModel : ViewModel() {
     private val _notifications = MutableStateFlow<List<DoctorNotification>>(emptyList())
     val notifications: StateFlow<List<DoctorNotification>> = _notifications.asStateFlow()
 
+    // Connection requests
+    private val _connectionRequests = MutableStateFlow<List<ConnectionRequest>>(emptyList())
+    val connectionRequests: StateFlow<List<ConnectionRequest>> = _connectionRequests.asStateFlow()
+
     // UI state
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -53,6 +59,24 @@ class DoctorHomeViewModel : ViewModel() {
 
     init {
         loadDoctorDashboardData()
+        observeConnectionRequests()
+    }
+
+    /**
+     * Observe connection requests in real-time
+     */
+    private fun observeConnectionRequests() {
+        viewModelScope.launch {
+            try {
+                connectionRepository.getPendingConnectionRequests().collect { requests ->
+                    _connectionRequests.value = requests
+                }
+            } catch (e: Exception) {
+                // Silently fail if Firestore index is missing or other errors
+                _connectionRequests.value = emptyList()
+                // Don't show error for connection requests - it's not critical
+            }
+        }
     }
 
     /**
@@ -205,6 +229,38 @@ class DoctorHomeViewModel : ViewModel() {
      */
     fun clearError() {
         _errorMessage.value = null
+    }
+
+    /**
+     * Accept connection request
+     */
+    fun acceptConnectionRequest(requestId: String) {
+        viewModelScope.launch {
+            try {
+                val result = connectionRepository.acceptConnectionRequest(requestId)
+                result.onFailure { exception ->
+                    _errorMessage.value = "Failed to accept request: ${exception.message}"
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Error accepting request: ${e.message}"
+            }
+        }
+    }
+
+    /**
+     * Reject connection request
+     */
+    fun rejectConnectionRequest(requestId: String) {
+        viewModelScope.launch {
+            try {
+                val result = connectionRepository.rejectConnectionRequest(requestId)
+                result.onFailure { exception ->
+                    _errorMessage.value = "Failed to reject request: ${exception.message}"
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Error rejecting request: ${e.message}"
+            }
+        }
     }
 
     // Sample data methods (to be replaced with actual repository calls)

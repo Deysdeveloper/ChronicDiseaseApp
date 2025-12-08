@@ -1,0 +1,13 @@
+🔍 Starting Vitals Debug Monitor...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📱 Instructions:
+1. Make sure your device/emulator is connected
+2. Login as doctor 'amandeep' in the app
+3. Navigate to 'View All Patients Vitals'
+4. Watch the logs below...
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+❌ Error: adb command not found
+   Please ensure Android SDK platform-tools is in your PATH

@@ -1,0 +1,36 @@
+{
+  "rules": {
+    "users": {
+      "$userId": {
+        ".read": "$userId === auth.uid || auth != null",
+        ".write": "$userId === auth.uid",
+        "vitals": {
+          ".read": "auth != null",
+          ".indexOn": [
+            "timestamp"
+          ],
+          "heartRate": {
+            "$timestamp": {
+              ".validate": "newData.hasChildren(['value', 'timestamp', 'source', 'id'])"
+            }
+          },
+          "bloodPressure": {
+            "$timestamp": {
+              ".validate": "newData.hasChildren(['systolic', 'diastolic', 'timestamp', 'source', 'id'])"
+            }
+          },
+          "spO2": {
+            "$timestamp": {
+              ".validate": "newData.hasChildren(['value', 'timestamp', 'source', 'id'])"
+            }
+          },
+          "steps": {
+            "$timestamp": {
+              ".validate": "newData.hasChildren(['value', 'timestamp', 'source', 'id'])"
+            }
+          }
+        }
+      }
+    }
+  }
+}

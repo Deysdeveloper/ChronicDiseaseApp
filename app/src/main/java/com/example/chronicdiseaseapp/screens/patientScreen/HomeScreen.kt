@@ -174,10 +174,10 @@ fun HomeScreen(
                     label = { Text("Dashboard") }
                 )
                 NavigationBarItem(
-                    selected = selectedTab == BottomTab.Insights,
-                    onClick = { selectedTab = BottomTab.Insights },
-                    icon = { Icon(Icons.Default.Info, contentDescription = "Insights") },
-                    label = { Text("Insights") }
+                    selected = selectedTab == BottomTab.Doctors,
+                    onClick = { selectedTab = BottomTab.Doctors },
+                    icon = { Icon(Icons.Default.Person, contentDescription = "Doctors") },
+                    label = { Text("Doctors") }
                 )
                 NavigationBarItem(
                     selected = selectedTab == BottomTab.Analysis,
@@ -358,9 +358,9 @@ fun HomeScreen(
                             )
                         }
                     }
-                } else if (selectedTab == BottomTab.Insights) {
+                } else if (selectedTab == BottomTab.Doctors) {
                     Text(
-                        text = "Insights",
+                        text = "Doctors",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF222222)
@@ -628,8 +628,8 @@ fun HomeScreen(
                     }
                 }
 
-                BottomTab.Insights -> {
-                    InsightsScreen()
+                BottomTab.Doctors -> {
+                    DoctorsListScreen()
                 }
 
                 BottomTab.Analysis -> {
@@ -1646,6 +1646,6 @@ fun HomeScreenPreview() {
     HomeScreen()
 }
 
-private enum class BottomTab { Dashboard, Insights, Analysis, Profile }
+private enum class BottomTab { Dashboard, Doctors, Analysis, Profile }
 
 private enum class TrendType { HEART_RATE, SPO2, BLOOD_PRESSURE, STEPS }

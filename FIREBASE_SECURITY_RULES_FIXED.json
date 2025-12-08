@@ -1,0 +1,48 @@
+{
+  "rules": {
+    "users": {
+      "$userId": {
+        ".read": "auth != null && (auth.uid == $userId || root.child('connections').child(auth.uid).child($userId).child('status').val() == 'ACCEPTED')",
+        ".write": "auth != null && auth.uid == $userId",
+        "vitals": {
+          ".read": "auth != null && (auth.uid == $userId || root.child('connections').child(auth.uid).child($userId).child('status').val() == 'ACCEPTED')",
+          ".write": "auth != null && auth.uid == $userId",
+          ".indexOn": [
+            "timestamp"
+          ],
+          "heartRate": {
+            "$vitalId": {
+              ".validate": "newData.hasChildren(['value', 'timestamp', 'source', 'id'])"
+            }
+          },
+          "bloodPressure": {
+            "$vitalId": {
+              ".validate": "newData.hasChildren(['systolic', 'diastolic', 'timestamp', 'source', 'id'])"
+            }
+          },
+          "spO2": {
+            "$vitalId": {
+              ".validate": "newData.hasChildren(['value', 'timestamp', 'source', 'id'])"
+            }
+          },
+          "steps": {
+            "$vitalId": {
+              ".validate": "newData.hasChildren(['value', 'timestamp', 'source', 'id'])"
+            }
+          }
+        }
+      }
+    },
+    "connections": {
+      "$doctorId": {
+        "$patientId": {
+          ".read": "auth != null && (auth.uid == $doctorId || auth.uid == $patientId)",
+          ".write": "auth != null && (auth.uid == $patientId || auth.uid == $doctorId)",
+          "status": {
+            ".validate": "newData.isString() && (newData.val() == 'PENDING' || newData.val() == 'ACCEPTED' || newData.val() == 'REJECTED')"
+          }
+        }
+      }
+    }
+  }
+}

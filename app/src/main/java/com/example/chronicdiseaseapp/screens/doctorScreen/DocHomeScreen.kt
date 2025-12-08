@@ -47,6 +47,7 @@ fun DocHomeScreen(
     val recentPatients by viewModel.recentPatients.collectAsState()
     val recentActivities by viewModel.recentActivities.collectAsState()
     val notifications by viewModel.notifications.collectAsState()
+    val connectionRequests by viewModel.connectionRequests.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
 
@@ -206,7 +207,11 @@ fun DocHomeScreen(
                         DashboardContent(
                             doctorStats = doctorStats,
                             recentActivities = recentActivities,
-                            onRefresh = { viewModel.refreshData() }
+                            connectionRequests = connectionRequests,
+                            onRefresh = { viewModel.refreshData() },
+                            onNavigateToPatientList = onNavigateToPatientList,
+                            onAcceptRequest = { viewModel.acceptConnectionRequest(it) },
+                            onRejectRequest = { viewModel.rejectConnectionRequest(it) }
                         )
                     }
                     DoctorTab.Patients -> {
@@ -236,7 +241,11 @@ fun DocHomeScreen(
 private fun DashboardContent(
     doctorStats: DoctorStats,
     recentActivities: List<RecentActivity>,
-    onRefresh: () -> Unit
+    connectionRequests: List<ConnectionRequest>,
+    onRefresh: () -> Unit,
+    onNavigateToPatientList: () -> Unit = {},
+    onAcceptRequest: (String) -> Unit = {},
+    onRejectRequest: (String) -> Unit = {}
 ) {
     LazyColumn(
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -260,6 +269,26 @@ private fun DashboardContent(
             }
 
             Spacer(modifier = Modifier.height(8.dp))
+
+            // Connection Requests Section (if any)
+            if (connectionRequests.isNotEmpty()) {
+                Text(
+                    text = "Connection Requests (${connectionRequests.size})",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF222222),
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+
+                connectionRequests.forEach { request ->
+                    ConnectionRequestCard(
+                        request = request,
+                        onAccept = { onAcceptRequest(request.id) },
+                        onReject = { onRejectRequest(request.id) }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
 
             // Dashboard grid 2x2 - matching patient home design
             Column(modifier = Modifier.fillMaxWidth()) {
@@ -414,6 +443,77 @@ private fun PatientsContent(
                             onClick = { onNavigateToPatientDetails(patient.id) }
                         )
                     }
+                }
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Quick Access Card - View All Patients Vitals
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFF6A5ACD)
+                ),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                onClick = onNavigateToPatientList
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(20.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "View All Patients Vitals",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Monitor BP, Heart Rate, SpO2, Steps & more",
+                            fontSize = 13.sp,
+                            color = Color.White.copy(alpha = 0.9f)
+                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Favorite,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Icon(
+                                Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Icon(
+                                Icons.Default.Star,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                    Icon(
+                        Icons.Default.KeyboardArrowRight,
+                        contentDescription = "Go",
+                        tint = Color.White,
+                        modifier = Modifier.size(40.dp)
+                    )
                 }
             }
         }
@@ -883,6 +983,114 @@ private fun NotificationCard(
                         .clip(CircleShape)
                         .background(Color(0xFF6A5ACD))
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConnectionRequestCard(
+    request: ConnectionRequest,
+    onAccept: () -> Unit,
+    onReject: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = request.patientName,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF222222)
+                    )
+                    Text(
+                        text = "Age: ${request.patientAge}",
+                        fontSize = 14.sp,
+                        color = Color(0xFF666666)
+                    )
+                    Text(
+                        text = request.patientEmail,
+                        fontSize = 13.sp,
+                        color = Color(0xFF888888)
+                    )
+                }
+
+                Text(
+                    text = request.timeAgo,
+                    fontSize = 11.sp,
+                    color = Color(0xFF999999)
+                )
+            }
+
+            if (request.message.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Message:",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF666666)
+                )
+                Text(
+                    text = request.message,
+                    fontSize = 13.sp,
+                    color = Color(0xFF444444),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onReject,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.Red
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Reject")
+                }
+
+                Button(
+                    onClick = onAccept,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF4CAF50)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Accept")
+                }
             }
         }
     }

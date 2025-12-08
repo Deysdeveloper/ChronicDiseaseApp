@@ -18,6 +18,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.chronicdiseaseapp.screens.AuthenticationScreen
 import com.example.chronicdiseaseapp.screens.patientScreen.HomeScreen
 import com.example.chronicdiseaseapp.screens.doctorScreen.DocHomeScreen
+import com.example.chronicdiseaseapp.screens.doctorScreen.PatientsVitalsScreen
 import com.example.chronicdiseaseapp.screens.LoginScreen
 import com.example.chronicdiseaseapp.screens.SignUpScreen
 import com.example.chronicdiseaseapp.viewModel.AuthState
@@ -33,6 +34,7 @@ sealed class Screen(val route: String) {
     object SignUp : Screen("signup")
     object PatientHome : Screen("patient_home")
     object DoctorHome : Screen("doctor_home")
+    object PatientsVitals : Screen("patients_vitals")
     object ForgotPassword : Screen("forgot_password")
 
     // Legacy home route for backward compatibility
@@ -188,7 +190,7 @@ fun Navigation(
                     // TODO: Navigate to appointments screen
                 },
                 onNavigateToPatientList = {
-                    // TODO: Navigate to patient list screen
+                    navController.navigate(Screen.PatientsVitals.route)
                 },
                 onNavigateToProfile = {
                     // TODO: Navigate to doctor profile screen
@@ -200,6 +202,18 @@ fun Navigation(
                             inclusive = true
                         }
                     }
+                }
+            )
+        }
+
+        // Patients Vitals Screen
+        composable(Screen.PatientsVitals.route) {
+            PatientsVitalsScreen(
+                onNavigateBack = {
+                    navController.popBackStack()
+                },
+                onNavigateToPatientDetail = { patientId ->
+                    // TODO: Navigate to patient detail screen
                 }
             )
         }
