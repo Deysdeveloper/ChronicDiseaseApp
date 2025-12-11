@@ -1,0 +1,9 @@
+{
+  "min": 60.0,
+  "max": 130.62047892200826,
+  "threshold": 0.00020099659741390496,
+  "window_len": 10,
+  "target": "systolic",
+  "abs_critical_high_systolic": 130.0,
+  "abs_critical_high_diastolic": 90.0
+}

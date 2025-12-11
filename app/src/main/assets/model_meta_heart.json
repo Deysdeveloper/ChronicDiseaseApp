@@ -1,0 +1,9 @@
+{
+  "min": 40.0,
+  "max": 113.46795489796376,
+  "threshold": 0.000391235837014392,
+  "window_len": 10,
+  "target": "heart_rate",
+  "abs_critical_high_heart_rate": 95.0,
+  "high_abnormal_heart_rate": 85.0
+}

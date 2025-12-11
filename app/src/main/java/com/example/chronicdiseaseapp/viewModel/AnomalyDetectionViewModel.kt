@@ -87,6 +87,16 @@ class AnomalyDetectionViewModel(application: Application) : AndroidViewModel(app
             try {
                 withContext(Dispatchers.Main) { _isAnalyzing.value = true }
 
+                // Always re-init the right model
+                val modelInit = modelHelper.initializeForVital(VitalType.HEART_RATE)
+                if (!modelInit) {
+                    withContext(Dispatchers.Main) {
+                        _errorMessage.value = "Failed to load heart rate ML model"
+                        _isAnalyzing.value = false
+                    }
+                    return@launch
+                }
+
                 // Filter valid heart rate values (20-250 bpm) - exclude corrupted data
                 val validReadings = readings.filter { reading ->
                     val hr = reading.heartRate?.toFloat()
@@ -148,6 +158,16 @@ class AnomalyDetectionViewModel(application: Application) : AndroidViewModel(app
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 withContext(Dispatchers.Main) { _isAnalyzing.value = true }
+
+                // Always re-init the right model
+                val modelInit = modelHelper.initializeForVital(VitalType.SPO2)
+                if (!modelInit) {
+                    withContext(Dispatchers.Main) {
+                        _errorMessage.value = "Failed to load SpO2 ML model"
+                        _isAnalyzing.value = false
+                    }
+                    return@launch
+                }
 
                 // Filter valid SpO2 values (0-100%) - exclude corrupted data
                 val validReadings = readings.filter { reading ->
@@ -231,6 +251,17 @@ class AnomalyDetectionViewModel(application: Application) : AndroidViewModel(app
             try {
                 withContext(Dispatchers.Main) { _isAnalyzing.value = true }
 
+                val vitalType = if (useSystolic) VitalType.SYSTOLIC else VitalType.DIASTOLIC
+                // Always re-init the right model
+                val modelInit = modelHelper.initializeForVital(vitalType)
+                if (!modelInit) {
+                    withContext(Dispatchers.Main) {
+                        _errorMessage.value = "Failed to load BP ML model ($vitalType)"
+                        _isAnalyzing.value = false
+                    }
+                    return@launch
+                }
+
                 val values = if (useSystolic) {
                     readings.mapNotNull { it.bloodPressureSystolic?.toFloat() }
                 } else {
@@ -253,7 +284,6 @@ class AnomalyDetectionViewModel(application: Application) : AndroidViewModel(app
                     return@launch
                 }
 
-                val vitalType = if (useSystolic) VitalType.SYSTOLIC else VitalType.DIASTOLIC
                 val detectedAnomalies = modelHelper.detectAnomaliesInSeries(
                     values = values,
                     timestamps = timestamps,
@@ -304,16 +334,17 @@ class AnomalyDetectionViewModel(application: Application) : AndroidViewModel(app
                         val hrTimestamps = validHR.mapNotNull {
                             if (it.heartRate != null) it.timestamp else null
                         }
-                        val hrAnomalies = modelHelper.detectAnomaliesInSeries(
-                            hrValues, hrTimestamps, VitalType.HEART_RATE
-                        )
-                        allAnomalies.addAll(hrAnomalies)
+                        val modelInit = modelHelper.initializeForVital(VitalType.HEART_RATE)
+                        if (modelInit) {
+                            val hrAnomalies = modelHelper.detectAnomaliesInSeries(
+                                hrValues, hrTimestamps, VitalType.HEART_RATE
+                            )
+                            allAnomalies.addAll(hrAnomalies)
+                        }
                     }
                 }
-
                 // Analyze SpO2 (with validation)
                 if (spO2Data.size >= 10) {
-                    // Filter valid SpO2 values (0-100%)
                     val validSpO2 = spO2Data.filter { reading ->
                         val spo2 = reading.oxygenSaturation?.toFloat()
                         spo2 != null && spo2 >= 0f && spo2 <= 100f
@@ -332,16 +363,17 @@ class AnomalyDetectionViewModel(application: Application) : AndroidViewModel(app
                         val spo2Timestamps = validSpO2.mapNotNull {
                             if (it.oxygenSaturation != null) it.timestamp else null
                         }
-                        val spo2Anomalies = modelHelper.detectAnomaliesInSeries(
-                            spo2Values, spo2Timestamps, VitalType.SPO2
-                        )
-                        allAnomalies.addAll(spo2Anomalies)
+                        val modelInit = modelHelper.initializeForVital(VitalType.SPO2)
+                        if (modelInit) {
+                            val spo2Anomalies = modelHelper.detectAnomaliesInSeries(
+                                spo2Values, spo2Timestamps, VitalType.SPO2
+                            )
+                            allAnomalies.addAll(spo2Anomalies)
+                        }
                     }
                 }
-
                 // Analyze Systolic BP (with validation)
                 if (bloodPressureData.size >= 10) {
-                    // Filter valid systolic values (60-250 mmHg)
                     val validSystolic = bloodPressureData.filter { reading ->
                         val sys = reading.bloodPressureSystolic?.toFloat()
                         sys != null && sys >= 60f && sys <= 250f
@@ -353,10 +385,13 @@ class AnomalyDetectionViewModel(application: Application) : AndroidViewModel(app
                         val sysTimestamps = validSystolic.mapNotNull {
                             if (it.bloodPressureSystolic != null) it.timestamp else null
                         }
-                        val sysAnomalies = modelHelper.detectAnomaliesInSeries(
-                            sysValues, sysTimestamps, VitalType.SYSTOLIC
-                        )
-                        allAnomalies.addAll(sysAnomalies)
+                        val modelInit = modelHelper.initializeForVital(VitalType.SYSTOLIC)
+                        if (modelInit) {
+                            val sysAnomalies = modelHelper.detectAnomaliesInSeries(
+                                sysValues, sysTimestamps, VitalType.SYSTOLIC
+                            )
+                            allAnomalies.addAll(sysAnomalies)
+                        }
                     }
 
                     // Analyze Diastolic BP (with validation)
