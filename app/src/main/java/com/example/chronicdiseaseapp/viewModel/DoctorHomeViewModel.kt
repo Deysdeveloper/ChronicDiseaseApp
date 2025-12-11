@@ -266,8 +266,8 @@ class DoctorHomeViewModel : ViewModel() {
     // Sample data methods (to be replaced with actual repository calls)
     private fun getSampleDoctorStats(): DoctorStats {
         return DoctorStats(
-            totalPatients = 127,
-            activePatients = 89,
+            totalPatients = 2,
+            activePatients = 1,
             appointmentsToday = 8,
             appointmentsThisWeek = 42,
             appointmentsThisMonth = 178,
