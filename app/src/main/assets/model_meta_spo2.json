@@ -1,1 +1,9 @@
-{"min": 92.21399535887706, "max": 100.0, "threshold": 0.0006736515206284821, "window_len": 10, "target": "spo2"}
+{
+  "min": 92.21399535887706,
+  "max": 100.0,
+  "threshold": 0.0006736515206284821,
+  "window_len": 10,
+  "target": "spo2",
+  "abs_critical_low_spo2": 90.0,
+  "high_abnormal_low_spo2": 95.0
+}

@@ -14,7 +14,8 @@ data class PatientVitalsInfo(
     val latestSpO2: Int? = null,
     val latestSteps: Int? = null,
     val lastVitalsUpdate: Long = 0L,
-    val userType: UserType = UserType.PATIENT
+    val userType: UserType = UserType.PATIENT,
+    val connectionRequestId: String? = null  // Connection ID for removing connection
 ) {
     val bloodPressureDisplay: String
         get() = if (latestBloodPressureSystolic != null && latestBloodPressureDiastolic != null) {

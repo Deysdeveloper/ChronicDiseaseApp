@@ -129,6 +129,31 @@ class DoctorConnectionViewModel : ViewModel() {
     }
 
     /**
+     * Remove connection (for patients to disconnect from doctors)
+     */
+    fun removeConnection(requestId: String, doctorName: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            _successMessage.value = null
+
+            try {
+                val result = repository.removeConnection(requestId)
+                result.onSuccess {
+                    _successMessage.value = "Disconnected from $doctorName"
+                    loadDoctors()
+                }.onFailure { exception ->
+                    _errorMessage.value = "Failed to remove connection: ${exception.message}"
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Error removing connection: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
      * Observe feedback from doctors
      */
     private fun observeFeedback() {
@@ -190,6 +215,33 @@ class DoctorConnectionViewModel : ViewModel() {
      */
     fun clearSuccess() {
         _successMessage.value = null
+    }
+
+    /**
+     * Migrate existing connections from Firestore to RTDB
+     * This is a ONE-TIME operation to fix old connections
+     */
+    fun migrateConnectionsToRTDB() {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            _successMessage.value = null
+
+            val result = repository.migrateExistingConnectionsToRTDB()
+            
+            result.fold(
+                onSuccess = { migrationResult ->
+                    _successMessage.value = migrationResult.summary
+                    android.util.Log.d("DoctorConnectionVM", "Migration complete: ${migrationResult.summary}")
+                },
+                onFailure = { error ->
+                    _errorMessage.value = "Migration failed: ${error.message}"
+                    android.util.Log.e("DoctorConnectionVM", "Migration failed", error)
+                }
+            )
+
+            _isLoading.value = false
+        }
     }
 
     /**

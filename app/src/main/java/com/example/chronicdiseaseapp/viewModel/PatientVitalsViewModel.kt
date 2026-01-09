@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.chronicdiseaseapp.datamodels.PatientVitalsHistory
 import com.example.chronicdiseaseapp.datamodels.PatientVitalsInfo
 import com.example.chronicdiseaseapp.repository.PatientVitalsRepository
+import com.example.chronicdiseaseapp.repository.DoctorConnectionRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,6 +17,7 @@ import kotlinx.coroutines.launch
 class PatientVitalsViewModel : ViewModel() {
 
     private val repository = PatientVitalsRepository()
+    private val connectionRepository = DoctorConnectionRepository()
 
     // All patients with their latest vitals
     private val _patientsVitals = MutableStateFlow<List<PatientVitalsInfo>>(emptyList())
@@ -41,6 +43,10 @@ class PatientVitalsViewModel : ViewModel() {
     // Error message
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+
+    // Success message
+    private val _successMessage = MutableStateFlow<String?>(null)
+    val successMessage: StateFlow<String?> = _successMessage.asStateFlow()
 
     // Sort options
     private val _sortBy = MutableStateFlow(SortOption.NAME)
@@ -178,6 +184,38 @@ class PatientVitalsViewModel : ViewModel() {
      */
     fun refresh() {
         loadAllPatientsVitals()
+    }
+
+    /**
+     * Remove connection with a patient (for doctors to disconnect from patients)
+     */
+    fun removeConnection(connectionRequestId: String, patientName: String) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _errorMessage.value = null
+            _successMessage.value = null
+
+            try {
+                val result = connectionRepository.removeConnection(connectionRequestId)
+                result.onSuccess {
+                    _successMessage.value = "Disconnected from $patientName"
+                    loadAllPatientsVitals()
+                }.onFailure { exception ->
+                    _errorMessage.value = "Failed to remove connection: ${exception.message}"
+                }
+            } catch (e: Exception) {
+                _errorMessage.value = "Error removing connection: ${e.message}"
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
+    /**
+     * Clear success message
+     */
+    fun clearSuccess() {
+        _successMessage.value = null
     }
 
     enum class SortOption(val displayName: String) {

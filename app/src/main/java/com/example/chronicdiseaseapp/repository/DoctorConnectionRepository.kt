@@ -353,6 +353,54 @@ class DoctorConnectionRepository {
     }
 
     /**
+     * Remove connection (can be called by either doctor or patient)
+     * This will delete the connection from both Firestore and RTDB
+     */
+    suspend fun removeConnection(connectionRequestId: String): Result<Unit> {
+        return try {
+            val currentUser = auth.currentUser
+                ?: return Result.failure(Exception("User not authenticated"))
+
+            // 1. Get connection details from Firestore
+            val connectionDoc = firestore.collection(CONNECTIONS_COLLECTION)
+                .document(connectionRequestId)
+                .get()
+                .await()
+
+            val patientId = connectionDoc.getString("patientId")
+            val doctorId = connectionDoc.getString("doctorId")
+
+            if (patientId == null || doctorId == null) {
+                Log.e(tag, "Invalid connection document - missing patientId or doctorId")
+                return Result.failure(Exception("Invalid connection document"))
+            }
+
+            Log.d(tag, "🔗 Removing connection: Doctor=$doctorId, Patient=$patientId")
+
+            // 2. Delete from Firestore
+            firestore.collection(CONNECTIONS_COLLECTION)
+                .document(connectionRequestId)
+                .delete()
+                .await()
+
+            // 3. Remove from RTDB
+            realtimeDatabase.reference
+                .child("connections")
+                .child(doctorId)
+                .child(patientId)
+                .removeValue()
+                .await()
+
+            Log.d(tag, "✅ Connection removed from both Firestore and RTDB: $connectionRequestId")
+            Log.d(tag, "   🗑️ Removed from RTDB: connections/$doctorId/$patientId")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(tag, "❌ Error removing connection", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Get connected patients for a doctor
      */
     suspend fun getConnectedPatients(): Result<List<String>> {
@@ -493,5 +541,115 @@ class DoctorConnectionRepository {
             Log.e(tag, "❌ Error marking feedback as read", e)
             Result.failure(e)
         }
+    }
+
+    /**
+     * ONE-TIME MIGRATION: Mirror all existing ACCEPTED connections from Firestore to RTDB
+     * This ensures that old connections (accepted before mirroring code was added) work with security rules
+     * 
+     * Call this once from your app to migrate all existing connections.
+     * Safe to call multiple times - will only update existing ACCEPTED connections.
+     */
+    suspend fun migrateExistingConnectionsToRTDB(): Result<MigrationResult> {
+        return try {
+            val currentUser = auth.currentUser
+                ?: return Result.failure(Exception("User not authenticated"))
+
+            Log.d(tag, "🔄 Starting connection migration to RTDB...")
+
+            // Get ALL ACCEPTED connections from Firestore (not just for current user)
+            val acceptedConnections = firestore.collection(CONNECTIONS_COLLECTION)
+                .whereEqualTo("status", ConnectionStatus.ACCEPTED.name)
+                .get()
+                .await()
+
+            Log.d(tag, "📊 Found ${acceptedConnections.size()} ACCEPTED connections in Firestore")
+
+            var migratedCount = 0
+            var skippedCount = 0
+            var errorCount = 0
+
+            acceptedConnections.documents.forEach { doc ->
+                try {
+                    val doctorId = doc.getString("doctorId")
+                    val patientId = doc.getString("patientId")
+                    val respondedAt = doc.getLong("respondedAt") ?: System.currentTimeMillis()
+
+                    if (doctorId != null && patientId != null) {
+                        // Check if already exists in RTDB
+                        val existingRef = realtimeDatabase.reference
+                            .child("connections")
+                            .child(doctorId)
+                            .child(patientId)
+                            .get()
+                            .await()
+
+                        if (!existingRef.exists()) {
+                            // Mirror to RTDB
+                            realtimeDatabase.reference
+                                .child("connections")
+                                .child(doctorId)
+                                .child(patientId)
+                                .setValue(
+                                    mapOf(
+                                        "status" to "ACCEPTED",
+                                        "acceptedAt" to respondedAt,
+                                        "patientId" to patientId,
+                                        "doctorId" to doctorId,
+                                        "migratedAt" to com.google.firebase.database.ServerValue.TIMESTAMP
+                                    )
+                                )
+                                .await()
+
+                            migratedCount++
+                            Log.d(tag, "✅ Migrated: Doctor=$doctorId, Patient=$patientId")
+                        } else {
+                            skippedCount++
+                            Log.d(tag, "⏭️ Skipped (already exists): Doctor=$doctorId, Patient=$patientId")
+                        }
+                    } else {
+                        errorCount++
+                        Log.w(tag, "⚠️ Invalid connection document: ${doc.id} - missing doctorId or patientId")
+                    }
+                } catch (e: Exception) {
+                    errorCount++
+                    Log.e(tag, "❌ Error migrating connection ${doc.id}", e)
+                }
+            }
+
+            val result = MigrationResult(
+                totalConnections = acceptedConnections.size(),
+                migratedCount = migratedCount,
+                skippedCount = skippedCount,
+                errorCount = errorCount
+            )
+
+            Log.d(tag, "🎉 Migration complete!")
+            Log.d(tag, "   📊 Total connections: ${result.totalConnections}")
+            Log.d(tag, "   ✅ Migrated: ${result.migratedCount}")
+            Log.d(tag, "   ⏭️ Skipped (already existed): ${result.skippedCount}")
+            Log.d(tag, "   ❌ Errors: ${result.errorCount}")
+
+            Result.success(result)
+        } catch (e: Exception) {
+            Log.e(tag, "❌ Fatal error during migration", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Data class for migration results
+     */
+    data class MigrationResult(
+        val totalConnections: Int,
+        val migratedCount: Int,
+        val skippedCount: Int,
+        val errorCount: Int
+    ) {
+        val isSuccessful: Boolean
+            get() = migratedCount > 0 && errorCount == 0
+
+        val summary: String
+            get() = "Migrated $migratedCount/$totalConnections connections (Skipped: $skippedCount, Errors: $errorCount)"
     }
 }

@@ -32,12 +32,16 @@ class TFLiteModelHelper(private val context: Context) {
     private var kVotes: Int = 2
     private var delta: Float = 8.0f
     private var absCriticalLowSpO2: Float = 90.0f
-    private var absCriticalHighSystolic: Float = 180.0f
+    private var highAbnormalLowSpO2: Float = 95.0f
+    private var absCriticalHighSystolic: Float = 140.0f
     private var absCriticalLowSystolic: Float = 90.0f
-    private var absCriticalHighDiastolic: Float = 85.0f
+    private var highAbnormalSystolic: Float = 130.0f
+    private var absCriticalHighDiastolic: Float = 90.0f
     private var absCriticalLowDiastolic: Float = 40.0f
-    private var absCriticalHighHeartRate: Float = 85.0f
+    private var highAbnormalDiastolic: Float = 80.0f
+    private var absCriticalHighHeartRate: Float = 90.0f
     private var absCriticalLowHeartRate: Float = 40.0f
+    private var highAbnormalHeartRate: Float = 80.0f
 
     /**
      * Initialize the model by loading TFLite file and metadata
@@ -125,25 +129,34 @@ class TFLiteModelHelper(private val context: Context) {
             kVotes = jsonObject.optInt("k_votes", 2)
             delta = jsonObject.optDouble("delta", 8.0).toFloat()
             absCriticalLowSpO2 = jsonObject.optDouble("abs_critical_low_spo2", 90.0).toFloat()
+            highAbnormalLowSpO2 = jsonObject.optDouble("high_abnormal_low_spo2", 95.0).toFloat()
             absCriticalHighSystolic =
-                jsonObject.optDouble("abs_critical_high_systolic", 180.0).toFloat()
+                jsonObject.optDouble("abs_critical_high_systolic", 140.0).toFloat()
             absCriticalLowSystolic =
                 jsonObject.optDouble("abs_critical_low_systolic", 90.0).toFloat()
+            highAbnormalSystolic =
+                jsonObject.optDouble("high_abnormal_systolic", 130.0).toFloat()
             absCriticalHighDiastolic =
-                jsonObject.optDouble("abs_critical_high_diastolic", 85.0).toFloat()
+                jsonObject.optDouble("abs_critical_high_diastolic", 90.0).toFloat()
             absCriticalLowDiastolic =
                 jsonObject.optDouble("abs_critical_low_diastolic", 40.0).toFloat()
+            highAbnormalDiastolic =
+                jsonObject.optDouble("high_abnormal_diastolic", 80.0).toFloat()
             absCriticalHighHeartRate =
-                jsonObject.optDouble("abs_critical_high_heart_rate", 85.0).toFloat()
+                jsonObject.optDouble("abs_critical_high_heart_rate", 90.0).toFloat()
             absCriticalLowHeartRate =
                 jsonObject.optDouble("abs_critical_low_heart_rate", 40.0).toFloat()
+            highAbnormalHeartRate =
+                jsonObject.optDouble("high_abnormal_heart_rate", 80.0).toFloat()
 
             Log.d(tag, "Metadata loaded - Min: $trainMin, Max: $trainMax, Threshold: $threshold")
             Log.d(
                 tag,
-                "Heart Rate thresholds: Low=$absCriticalLowHeartRate, High=$absCriticalHighHeartRate"
+                "Heart Rate thresholds: Low=$absCriticalLowHeartRate, High Abnormal=$highAbnormalHeartRate, Critical=$absCriticalHighHeartRate"
             )
-            Log.d(tag, "Diastolic BP thresholds: Low=$absCriticalLowDiastolic, High=$absCriticalHighDiastolic")
+            Log.d(tag, "SpO2 thresholds: High Abnormal=$highAbnormalLowSpO2%, Critical=$absCriticalLowSpO2%")
+            Log.d(tag, "Systolic BP thresholds: High Abnormal=$highAbnormalSystolic, Critical=$absCriticalHighSystolic")
+            Log.d(tag, "Diastolic BP thresholds: Low=$absCriticalLowDiastolic, High Abnormal=$highAbnormalDiastolic, Critical=$absCriticalHighDiastolic")
         } catch (e: Exception) {
             Log.e(tag, "Error loading metadata, using defaults", e)
         }
@@ -161,18 +174,25 @@ class TFLiteModelHelper(private val context: Context) {
             kVotes = jsonObject.optInt("k_votes", 2)
             delta = jsonObject.optDouble("delta", 8.0).toFloat()
             absCriticalLowSpO2 = jsonObject.optDouble("abs_critical_low_spo2", 90.0).toFloat()
+            highAbnormalLowSpO2 = jsonObject.optDouble("high_abnormal_low_spo2", 95.0).toFloat()
             absCriticalHighSystolic =
-                jsonObject.optDouble("abs_critical_high_systolic", 180.0).toFloat()
+                jsonObject.optDouble("abs_critical_high_systolic", 140.0).toFloat()
             absCriticalLowSystolic =
                 jsonObject.optDouble("abs_critical_low_systolic", 90.0).toFloat()
+            highAbnormalSystolic =
+                jsonObject.optDouble("high_abnormal_systolic", 130.0).toFloat()
             absCriticalHighDiastolic =
-                jsonObject.optDouble("abs_critical_high_diastolic", 85.0).toFloat()
+                jsonObject.optDouble("abs_critical_high_diastolic", 90.0).toFloat()
             absCriticalLowDiastolic =
                 jsonObject.optDouble("abs_critical_low_diastolic", 40.0).toFloat()
+            highAbnormalDiastolic =
+                jsonObject.optDouble("high_abnormal_diastolic", 80.0).toFloat()
             absCriticalHighHeartRate =
-                jsonObject.optDouble("abs_critical_high_heart_rate", 85.0).toFloat()
+                jsonObject.optDouble("abs_critical_high_heart_rate", 90.0).toFloat()
             absCriticalLowHeartRate =
                 jsonObject.optDouble("abs_critical_low_heart_rate", 40.0).toFloat()
+            highAbnormalHeartRate =
+                jsonObject.optDouble("high_abnormal_heart_rate", 80.0).toFloat()
             Log.d(
                 tag,
                 "[Per-vital] Metadata loaded from $metaFile - Min: $trainMin, Max: $trainMax, Threshold: $threshold"
@@ -348,32 +368,18 @@ class TFLiteModelHelper(private val context: Context) {
         // Get critical thresholds based on vital type
         val (criticalLow, criticalHigh, highAbnormalHigh) = when (vitalType) {
             VitalType.HEART_RATE -> {
-                val metaHigh = try {
-                    val f = context.assets.open("model_meta_heart.json").bufferedReader()
-                        .use { it.readText() }
-                    val obj = JSONObject(f)
-                    obj.optDouble("high_abnormal_heart_rate", 85.0).toFloat()
-                } catch (e: Exception) {
-                    85.0f
-                }
-                Triple(absCriticalLowHeartRate, absCriticalHighHeartRate, metaHigh)
+                Triple(absCriticalLowHeartRate, absCriticalHighHeartRate, highAbnormalHeartRate)
+            }
+            
+            VitalType.SYSTOLIC -> {
+                Triple(absCriticalLowSystolic, absCriticalHighSystolic, highAbnormalSystolic)
+            }
+            
+            VitalType.DIASTOLIC -> {
+                Triple(absCriticalLowDiastolic, absCriticalHighDiastolic, highAbnormalDiastolic)
             }
 
-            else -> Triple(
-                when (vitalType) {
-                    VitalType.SPO2 -> absCriticalLowSpO2
-                    VitalType.SYSTOLIC -> absCriticalLowSystolic
-                    VitalType.DIASTOLIC -> absCriticalLowDiastolic
-                    VitalType.HEART_RATE -> absCriticalLowHeartRate
-                },
-                when (vitalType) {
-                    VitalType.SPO2 -> Float.MAX_VALUE
-                    VitalType.SYSTOLIC -> absCriticalHighSystolic
-                    VitalType.DIASTOLIC -> absCriticalHighDiastolic
-                    VitalType.HEART_RATE -> absCriticalHighHeartRate
-                },
-                -1f
-            )
+            VitalType.SPO2 -> Triple(absCriticalLowSpO2, Float.MAX_VALUE, highAbnormalLowSpO2)
         }
 
         val anomalies = mutableListOf<AnomalyResult>()
@@ -395,14 +401,18 @@ class TFLiteModelHelper(private val context: Context) {
             // Check if value exceeds critical thresholds (absolute check)
             val exceedsCriticalThreshold = value <= criticalLow || value >= criticalHigh
 
-            // Custom high severity logic for heart rate
-            val isHeartRateHighAbnormal =
-                vitalType == VitalType.HEART_RATE && value > highAbnormalHigh && value <= criticalHigh
+            // Custom high severity logic for vitals with high abnormal ranges
+            val isInHighAbnormalRange = when (vitalType) {
+                VitalType.HEART_RATE -> value > highAbnormalHigh && value <= criticalHigh
+                VitalType.SYSTOLIC -> value > highAbnormalHigh && value <= criticalHigh
+                VitalType.DIASTOLIC -> value > highAbnormalHigh && value <= criticalHigh
+                VitalType.SPO2 -> value >= criticalLow && value < highAbnormalHigh // For SpO2: 90-95% is HIGH
+            }
 
-            if (exceedsCriticalThreshold || (hasModelVotes && hasDeviation) || isHeartRateHighAbnormal) {
+            if (exceedsCriticalThreshold || (hasModelVotes && hasDeviation) || isInHighAbnormalRange) {
                 val severity = when {
                     value > criticalHigh -> AnomalySeverity.CRITICAL
-                    isHeartRateHighAbnormal -> AnomalySeverity.HIGH
+                    isInHighAbnormalRange -> AnomalySeverity.HIGH
                     value <= criticalLow -> AnomalySeverity.CRITICAL
                     abs(value - localMedians[i]) >= delta * 2 -> AnomalySeverity.HIGH
                     votes[i] >= kVotes * 2 -> AnomalySeverity.HIGH

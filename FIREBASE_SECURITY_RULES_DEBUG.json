@@ -1,0 +1,50 @@
+{
+  "rules": {
+    "users": {
+      "$userId": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == $userId",
+        "vitals": {
+          ".read": "auth != null",
+          ".write": "auth != null && auth.uid == $userId",
+          ".indexOn": ["timestamp"],
+          "heartRate": {
+            ".read": "auth != null",
+            "$vitalId": {
+              ".validate": "newData.hasChildren(['value', 'timestamp', 'source', 'id'])"
+            }
+          },
+          "bloodPressure": {
+            ".read": "auth != null",
+            "$vitalId": {
+              ".validate": "newData.hasChildren(['systolic', 'diastolic', 'timestamp', 'source', 'id'])"
+            }
+          },
+          "spO2": {
+            ".read": "auth != null",
+            "$vitalId": {
+              ".validate": "newData.hasChildren(['value', 'timestamp', 'source', 'id'])"
+            }
+          },
+          "steps": {
+            ".read": "auth != null",
+            "$vitalId": {
+              ".validate": "newData.hasChildren(['value', 'timestamp', 'source', 'id'])"
+            }
+          }
+        }
+      }
+    },
+    "connections": {
+      "$doctorId": {
+        "$patientId": {
+          ".read": "auth != null",
+          ".write": "auth != null",
+          "status": {
+            ".validate": "newData.isString()"
+          }
+        }
+      }
+    }
+  }
+}

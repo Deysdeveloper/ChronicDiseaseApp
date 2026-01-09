@@ -228,7 +228,10 @@ fun DoctorsListScreen(
                 DoctorScreenTab.MY_CONNECTIONS -> {
                     MyConnectionsTab(
                         doctors = doctors.filter { it.isConnected },
-                        onCancelRequest = { viewModel.cancelConnectionRequest(it) }
+                        onCancelRequest = { viewModel.cancelConnectionRequest(it) },
+                        onRemoveConnection = { requestId, doctorName ->
+                            viewModel.removeConnection(requestId, doctorName)
+                        }
                     )
                 }
 
@@ -304,7 +307,8 @@ private fun AllDoctorsTab(
 @Composable
 private fun MyConnectionsTab(
     doctors: List<DoctorInfo>,
-    onCancelRequest: (String) -> Unit
+    onCancelRequest: (String) -> Unit,
+    onRemoveConnection: (String, String) -> Unit
 ) {
     if (doctors.isEmpty()) {
         Box(
@@ -346,7 +350,12 @@ private fun MyConnectionsTab(
             items(doctors) { doctor ->
                 ConnectedDoctorCard(
                     doctor = doctor,
-                    onCancel = { doctor.connectionRequestId?.let { onCancelRequest(it) } }
+                    onCancel = { doctor.connectionRequestId?.let { onCancelRequest(it) } },
+                    onRemove = {
+                        doctor.connectionRequestId?.let { requestId ->
+                            onRemoveConnection(requestId, doctor.fullName)
+                        }
+                    }
                 )
             }
         }
@@ -602,76 +611,143 @@ private fun DoctorCard(
 @Composable
 private fun ConnectedDoctorCard(
     doctor: DoctorInfo,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onRemove: () -> Unit
 ) {
+    var showRemoveDialog by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .clip(CircleShape)
-                    .background(Color.White),
-                contentAlignment = Alignment.Center
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (doctor.photoUrl.isNotEmpty()) {
-                    AsyncImage(
-                        model = doctor.photoUrl,
-                        contentDescription = "Doctor Photo",
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(CircleShape)
+                Box(
+                    modifier = Modifier
+                        .size(60.dp)
+                        .clip(CircleShape)
+                        .background(Color.White),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (doctor.photoUrl.isNotEmpty()) {
+                        AsyncImage(
+                            model = doctor.photoUrl,
+                            contentDescription = "Doctor Photo",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(CircleShape)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = doctor.fullName,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF222222)
                     )
-                } else {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = null,
-                        tint = Color(0xFF4CAF50),
-                        modifier = Modifier.size(32.dp)
+                    Text(
+                        text = doctor.specialization,
+                        fontSize = 13.sp,
+                        color = Color(0xFF2E7D32),
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = doctor.currentHospital,
+                        fontSize = 12.sp,
+                        color = Color(0xFF666666)
                     )
                 }
+
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = "Connected",
+                    tint = Color(0xFF4CAF50),
+                    modifier = Modifier.size(32.dp)
+                )
             }
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+            // Remove button
+            OutlinedButton(
+                onClick = { showRemoveDialog = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = Color.Red
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color.Red),
+                shape = RoundedCornerShape(8.dp)
             ) {
-                Text(
-                    text = doctor.fullName,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF222222)
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
                 )
-                Text(
-                    text = doctor.specialization,
-                    fontSize = 13.sp,
-                    color = Color(0xFF2E7D32),
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = doctor.currentHospital,
-                    fontSize = 12.sp,
-                    color = Color(0xFF666666)
-                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Remove Connection", fontSize = 14.sp)
             }
-
-            Icon(
-                Icons.Default.CheckCircle,
-                contentDescription = "Connected",
-                tint = Color(0xFF4CAF50),
-                modifier = Modifier.size(32.dp)
-            )
         }
+    }
+
+    // Confirmation dialog
+    if (showRemoveDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showRemoveDialog = false },
+            icon = {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = Color.Red,
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = {
+                Text("Remove Connection?")
+            },
+            text = {
+                Text("Are you sure you want to disconnect from Dr. ${doctor.fullName}? They will no longer be able to view your vitals.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRemove()
+                        showRemoveDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Red
+                    )
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRemoveDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

@@ -35,6 +35,7 @@ fun PatientsVitalsScreen(
     val filteredPatients by viewModel.filteredPatients.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val successMessage by viewModel.successMessage.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val sortBy by viewModel.sortBy.collectAsState()
     val filterOption by viewModel.filterOption.collectAsState()
@@ -151,6 +152,38 @@ fun PatientsVitalsScreen(
                     unfocusedBorderColor = Color.LightGray
                 )
             )
+
+            // Success message
+            successMessage?.let { message ->
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E9)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF4CAF50)
+                        )
+                        Text(
+                            text = message,
+                            color = Color(0xFF2E7D32),
+                            fontSize = 14.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = { viewModel.clearSuccess() }) {
+                            Text("Dismiss", color = Color(0xFF4CAF50))
+                        }
+                    }
+                }
+            }
 
             // Error message
             errorMessage?.let { error ->
@@ -295,7 +328,12 @@ fun PatientsVitalsScreen(
                                     patient.patientId
                                 }
                             },
-                            onClick = { onNavigateToPatientDetail(patient.patientId) }
+                            onClick = { onNavigateToPatientDetail(patient.patientId) },
+                            onRemove = {
+                                patient.connectionRequestId?.let { requestId ->
+                                    viewModel.removeConnection(requestId, patient.patientName)
+                                }
+                            }
                         )
                     }
                 }
@@ -340,8 +378,11 @@ private fun PatientVitalsCard(
     patient: PatientVitalsInfo,
     isExpanded: Boolean,
     onToggleExpand: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onRemove: () -> Unit
 ) {
+    var showRemoveDialog by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -381,14 +422,32 @@ private fun PatientVitalsCard(
 
                     // Patient info
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = patient.patientName,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF222222),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = patient.patientName,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF222222),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            // Remove button (icon only)
+                            IconButton(
+                                onClick = { showRemoveDialog = true },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove connection",
+                                    tint = Color.Red,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                         Text(
                             text = "Age: ${patient.age}",
                             fontSize = 13.sp,
@@ -522,6 +581,45 @@ private fun PatientVitalsCard(
                 }
             }
         }
+    }
+
+    // Confirmation dialog
+    if (showRemoveDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showRemoveDialog = false },
+            icon = {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = Color.Red,
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = {
+                Text("Remove Connection?")
+            },
+            text = {
+                Text("Are you sure you want to disconnect from ${patient.patientName}? You will no longer be able to view their vitals.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onRemove()
+                        showRemoveDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Red
+                    )
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRemoveDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

@@ -61,6 +61,18 @@ class PatientVitalsRepository {
             Log.d(tag, "✅ DEBUG: Found ${connectedPatientIds.size} connected patients")
             Log.d(tag, "✅ DEBUG: Connected patient IDs: $connectedPatientIds")
 
+            // Get connection request IDs for all connected patients
+            val connectionsSnapshot = firestore.collection("connections")
+                .whereEqualTo("doctorId", currentUser.uid)
+                .whereEqualTo("status", "ACCEPTED")
+                .get()
+                .await()
+
+            val connectionRequestIdMap = connectionsSnapshot.documents.associate { doc ->
+                val patientId = doc.getString("patientId") ?: ""
+                patientId to doc.id
+            }
+
             // Fetch only connected users from Firestore
             val patientVitalsList = mutableListOf<PatientVitalsInfo>()
 
@@ -84,7 +96,11 @@ class PatientVitalsRepository {
                         )
 
                         // Fetch latest vitals for this patient
-                        val vitalsInfo = fetchLatestVitalsForPatient(userId, userProfile)
+                        val vitalsInfo = fetchLatestVitalsForPatient(
+                            userId, 
+                            userProfile,
+                            connectionRequestIdMap[patientId]
+                        )
                         patientVitalsList.add(vitalsInfo)
 
                         Log.d(tag, "✅ DEBUG: Fetched vitals for ${userProfile.fullName}")
@@ -116,7 +132,8 @@ class PatientVitalsRepository {
      */
     private suspend fun fetchLatestVitalsForPatient(
         userId: String,
-        userProfile: UserProfile
+        userProfile: UserProfile,
+        connectionRequestId: String? = null
     ): PatientVitalsInfo {
         try {
             // Two candidate paths commonly used in apps — check both and pick the one that contains data
@@ -226,7 +243,8 @@ class PatientVitalsRepository {
                 latestSpO2 = latestSpO2,
                 latestSteps = latestSteps,
                 lastVitalsUpdate = lastVitalsUpdate,
-                userType = userProfile.userType
+                userType = userProfile.userType,
+                connectionRequestId = connectionRequestId
             )
         } catch (e: Exception) {
             Log.e(tag, "❌ Error fetching vitals for patient $userId", e)
@@ -236,7 +254,8 @@ class PatientVitalsRepository {
                 patientName = userProfile.fullName,
                 patientEmail = userProfile.email,
                 age = userProfile.age ?: 0,
-                userType = userProfile.userType
+                userType = userProfile.userType,
+                connectionRequestId = connectionRequestId
             )
         }
     }
