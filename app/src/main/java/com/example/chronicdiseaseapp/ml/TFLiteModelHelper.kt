@@ -2,6 +2,8 @@ package com.example.chronicdiseaseapp.ml
 
 import android.content.Context
 import android.util.Log
+import com.google.firebase.perf.FirebasePerformance
+import com.google.firebase.perf.metrics.Trace
 import org.json.JSONObject
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
@@ -236,13 +238,23 @@ class TFLiteModelHelper(private val context: Context) {
     fun detectAnomaliesInWindow(window: FloatArray,
                                 vitalType: VitalType
     ): Pair<FloatArray, BooleanArray> {
+        // Start Performance Monitoring trace
+        val trace = FirebasePerformance.getInstance().newTrace("ml_anomaly_detection")
+        trace.start()
+        trace.putAttribute("vital_type", vitalType.name)
+        trace.putAttribute("window_size", windowLen.toString())
+        
         if (interpreter == null) {
             Log.e(tag, "Model not initialized")
+            trace.putAttribute("error", "model_not_initialized")
+            trace.stop()
             return Pair(FloatArray(window.size), BooleanArray(window.size))
         }
 
         if (window.size != windowLen) {
             Log.e(tag, "Window size mismatch: expected $windowLen, got ${window.size}")
+            trace.putAttribute("error", "window_size_mismatch")
+            trace.stop()
             return Pair(FloatArray(window.size), BooleanArray(window.size))
         }
 
@@ -266,8 +278,14 @@ class TFLiteModelHelper(private val context: Context) {
                 order(ByteOrder.nativeOrder())
             }
 
+            // Track inference time
+            val inferenceStartTime = System.currentTimeMillis()
+            
             // Run inference
             interpreter?.run(inputBuffer, outputBuffer)
+            
+            val inferenceTime = System.currentTimeMillis() - inferenceStartTime
+            trace.putMetric("inference_time_ms", inferenceTime)
 
             // Extract reconstruction
             outputBuffer.rewind()
@@ -283,11 +301,22 @@ class TFLiteModelHelper(private val context: Context) {
             val anomalyMask = BooleanArray(windowLen) { i ->
                 mseValues[i] > threshold
             }
+            
+            // Count anomalies detected
+            val anomalyCount = anomalyMask.count { it }
+            trace.putMetric("anomalies_detected", anomalyCount.toLong())
+            trace.putAttribute("status", "success")
+            trace.stop()
+            
+            Log.d(tag, "Performance trace: ML inference completed in ${inferenceTime}ms with $anomalyCount anomalies")
 
             return Pair(mseValues, anomalyMask)
 
         } catch (e: Exception) {
             Log.e(tag, "Error during inference", e)
+            trace.putAttribute("error", "inference_exception")
+            trace.putAttribute("exception_message", e.message ?: "unknown")
+            trace.stop()
             return Pair(FloatArray(window.size), BooleanArray(window.size))
         }
     }

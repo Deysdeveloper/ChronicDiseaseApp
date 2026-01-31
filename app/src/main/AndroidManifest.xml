@@ -56,6 +56,16 @@
         <meta-data
             android:name="com.samsung.android.health.permission-group.READ"
             android:value="com.samsung.health.blood_pressure;com.samsung.health.heart_rate;com.samsung.health.oxygen_saturation;com.samsung.health.step_count" />
+
+        <!-- Firebase Performance Monitoring - Explicitly enable collection -->
+        <meta-data
+            android:name="firebase_performance_collection_enabled"
+            android:value="true" />
+
+        <!-- Firebase Performance Monitoring - Enable logcat logging for debugging -->
+        <meta-data
+            android:name="firebase_performance_logcat_enabled"
+            android:value="true" />
     </application>
 
 </manifest>
