@@ -45,15 +45,15 @@ android {
     }
 
     // Allow TFLite model files in assets
-    aaptOptions {
-        noCompress("tflite")
-    }
 
     // Configure packaging options for 16KB page alignment
     packaging {
         jniLibs {
             useLegacyPackaging = false
         }
+    }
+    androidResources {
+        noCompress += listOf("tflite")
     }
 }
 
