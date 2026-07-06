@@ -136,9 +136,3 @@ fun AuthenticationScreen(
         }
     }
 }
-
-@Preview(showBackground = true)
-@Composable
-fun AuthenticationScreenPreview() {
-    AuthenticationScreen()
-}
