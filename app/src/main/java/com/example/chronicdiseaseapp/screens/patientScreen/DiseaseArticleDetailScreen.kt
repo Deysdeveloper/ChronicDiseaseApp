@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.chronicdiseaseapp.datamodels.DiseaseArticle
 import com.example.chronicdiseaseapp.repository.DiseaseKnowledgeRepository
@@ -24,8 +23,8 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiseaseArticleDetailScreen(
-    navController: NavController,
-    articleId: String
+    articleId: String,
+    onNavigateBack: () -> Unit
 ) {
     val repository = remember { DiseaseKnowledgeRepository() }
     val scope = rememberCoroutineScope()
@@ -58,7 +57,7 @@ fun DiseaseArticleDetailScreen(
             TopAppBar(
                 title = { Text("Article Details") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
+                    IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -104,7 +103,7 @@ fun DiseaseArticleDetailScreen(
                                 color = MaterialTheme.colorScheme.error
                             )
                             Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { navController.navigateUp() }) {
+                            Button(onClick = onNavigateBack) {
                                 Text("Go Back")
                             }
                         }
@@ -125,7 +124,7 @@ fun DiseaseArticleDetailScreen(
                                 style = MaterialTheme.typography.bodyLarge
                             )
                             Spacer(modifier = Modifier.height(16.dp))
-                            Button(onClick = { navController.navigateUp() }) {
+                            Button(onClick = onNavigateBack) {
                                 Text("Go Back")
                             }
                         }

@@ -17,7 +17,6 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.chronicdiseaseapp.datamodels.DiseaseArticle
 import com.example.chronicdiseaseapp.viewModel.DiseaseKnowledgeViewModel
@@ -27,7 +26,8 @@ import java.util.*
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiseaseKnowledgeScreen(
-    navController: NavController,
+    onNavigateBack: () -> Unit,
+    onArticleClick: (String) -> Unit,
     viewModel: DiseaseKnowledgeViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -37,7 +37,7 @@ fun DiseaseKnowledgeScreen(
             TopAppBar(
                 title = { Text("Disease Knowledge") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.navigateUp() }) {
+                    IconButton(onClick = onNavigateBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -166,7 +166,7 @@ fun DiseaseKnowledgeScreen(
                                 ArticleCard(
                                     article = article,
                                     onClick = {
-                                        navController.navigate("diseaseArticleDetail/${article.id}")
+                                        onArticleClick(article.id)
                                     }
                                 )
                             }
